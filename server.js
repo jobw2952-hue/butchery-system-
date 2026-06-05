@@ -237,9 +237,10 @@ app.post('/api/inventory', authenticateToken, (req, res) => {
         });
 });
 
-// Update inventory (super admin only)
+// Update inventory - ALLOW BOTH super_admin AND admin to edit stock
 app.put('/api/inventory/:id', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
+    // Allow both super_admin and admin to edit inventory
+    if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Permission denied' });
     }
     const { name, animal, stockKg, priceKg, costKg, lowStockAlert } = req.body;
