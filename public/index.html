@@ -55,7 +55,7 @@
         .btn-edit:hover { background: #2563eb; }
         .btn-add-user { background: #10b981; padding: 8px 16px; font-size: 0.8rem; border-radius: 8px; color: white; cursor: pointer; border: none; }
         .btn-add-user:hover { background: #059669; }
-        .eye-icon { cursor: pointer; margin-left: 8px; color: #94a3b8; }
+        .eye-icon { cursor: pointer; margin-left: 8px; color: #94a3b8; font-size: 1rem; }
         .eye-icon:hover { color: #3b82f6; }
         .password-cell { display: flex; align-items: center; gap: 8px; }
         input, select, textarea { width: 100%; padding: 10px 14px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 0.9rem; }
@@ -104,14 +104,13 @@
 <div class="version-badge" onclick="showVersionInfo()">v5.0.0 🔗 Cloud Database</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - BACKEND CONNECTED ==========
+    // ========== BISMILAH BUTCHERY PRO - FIXED VERSION ==========
     
     const API_URL = '';
     let token = localStorage.getItem('token');
     let currentUser = null;
     let currentPage = 'dashboard';
     let showCreateAccount = false;
-    let showAddUserModal = false;
     let selectedReport = 'daily';
     let loginPasswordVisible = false;
     let visiblePasswords = {};
@@ -189,7 +188,7 @@
                 return false;
             }
         } catch (error) {
-            alert('Cannot connect to server. Make sure server is running on port 3000');
+            alert('Cannot connect to server. Make sure server is running.');
             return false;
         }
     }
@@ -205,12 +204,16 @@
     function canManageUsers() { return isSuperAdmin(); }
     function canViewLogs() { return isSuperAdmin(); }
     function canDelete() { return isSuperAdmin(); }
-    function canEditInventory() { return isSuperAdmin() || currentUser?.role === 'admin'; }
+    function canEditInventory() { return true; } // Both can edit
     
     function setPage(page) { currentPage = page; renderApp(); }
     
     // Toggle password visibility
     window.togglePasswordVisibility = (userId) => {
+        if (!isSuperAdmin()) {
+            alert('Only Super Admin can view passwords');
+            return;
+        }
         visiblePasswords[userId] = !visiblePasswords[userId];
         renderApp();
     };
@@ -222,54 +225,26 @@
             return;
         }
         
-        const modalHtml = `
-            <div class="reset-confirm-modal" id="resetConfirmModal">
-                <div class="reset-confirm-box">
-                    <i class="fas fa-exclamation-triangle" style="font-size:48px; color:#ef4444; margin-bottom:20px;"></i>
-                    <h3 style="margin-bottom:15px;">⚠️ WARNING: RESET ALL DATA</h3>
-                    <p style="margin-bottom:20px; color:#64748b;">This will permanently:</p>
-                    <ul style="text-align:left; margin-bottom:20px; color:#64748b;">
-                        <li>📊 Delete all sales records</li>
-                        <li>📅 Delete all closed days</li>
-                        <li>💸 Delete all expenses</li>
-                        <li>📋 Delete all activity logs</li>
-                        <li>📦 Set all inventory stock to 0 kg</li>
-                    </ul>
-                    <p style="color:#ef4444; margin-bottom:20px;"><strong>This action CANNOT be undone!</strong></p>
-                    <button onclick="confirmReset()" style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; margin-right:10px;">Yes, Reset Everything</button>
-                    <button onclick="closeResetModal()" style="background:#94a3b8; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer;">Cancel</button>
-                </div>
-            </div>
-        `;
-        const existing = document.getElementById('resetConfirmModal');
-        if (existing) existing.remove();
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-    };
-    
-    window.confirmReset = async () => {
-        closeResetModal();
+        const confirmed = confirm('⚠️ WARNING: This will DELETE ALL DATA!\n\n- All sales records\n- All closed days\n- All expenses\n- All activity logs\n- Set inventory stock to 0\n\nThis action CANNOT be undone!\n\nClick OK to reset everything.');
         
-        try {
-            const response = await fetch('/api/reset-all', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            
-            if (response.ok) {
-                await loadAllData();
-                renderApp();
-                alert('✅ All data has been reset to zero!');
-            } else {
-                alert('Reset failed. Please try again.');
+        if (confirmed) {
+            try {
+                const response = await fetch('/api/reset-all', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    await loadAllData();
+                    renderApp();
+                    alert('✅ All data has been reset to zero!');
+                } else {
+                    alert('Reset failed. Please try again.');
+                }
+            } catch (error) {
+                alert('Error resetting data.');
             }
-        } catch (error) {
-            alert('Error resetting data. Make sure server is running.');
         }
-    };
-    
-    window.closeResetModal = () => {
-        const modal = document.getElementById('resetConfirmModal');
-        if (modal) modal.remove();
     };
     
     // ADD USER FUNCTION
@@ -421,7 +396,7 @@
         }
     };
     
-    // Inventory functions - Admin can edit stock
+    // Inventory functions - Both Admin and Super Admin can edit
     window.openFullEditModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
@@ -580,7 +555,7 @@
         }
     };
     
-    // Create account (for new users from login page)
+    // Create account
     window.showCreateAccountForm = () => { showCreateAccount = true; renderApp(); };
     window.hideCreateAccountForm = () => { showCreateAccount = false; renderApp(); };
     
@@ -614,7 +589,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 5.0.0 (Cloud Database)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products\n\nAll data is stored in the cloud database!`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 5.0.0 (Cloud Database)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // Render Dashboard
@@ -628,17 +603,16 @@
             .filter(r => new Date(r.date) >= sevenDaysAgo)
             .reduce((sum, r) => sum + r.totalRevenue, 0);
         
-        // Get recent activities for dashboard
         const recentActivities = activityLogs.slice(0, 5);
         
         return `<div class="stats-grid">
             <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${todayTotal.toLocaleString()}</div><div class="stat-change">${currentDaySales.totalKg} kg sold today</div></div>
-            <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${totalInventoryValue.toLocaleString()}</div><div class="stat-change">Based on cost price</div></div>
-            <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div><div class="stat-change">Items below threshold</div></div>
-            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${weeklyRevenue.toLocaleString()}</div><div class="stat-change">From ${dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).length} closed days</div></div>
+            <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${totalInventoryValue.toLocaleString()}</div></div>
+            <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div></div>
+            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${weeklyRevenue.toLocaleString()}</div></div>
         </div>
         <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${item.stockKg} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-history"></i> Recent Activities</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>${recentActivities.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No activities yet</td></tr>' : recentActivities.map(l => `<tr><td>${l.timestamp}</td><td>${l.user}</td><td>${l.action}</td><td>${l.details}</td></tr>`).join('')}</tbody></table></div></div>`;
+        <div class="card"><div class="card-header"><h2><i class="fas fa-history"></i> Recent Activities</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>${recentActivities.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No activities yet</td></tr>' : recentActivities.map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div></div>`;
     }
     
     // Render Reports
@@ -649,12 +623,12 @@
         
         if (filtered.length === 0) {
             return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records</option></select></div>
-            <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>Start by recording sales and closing days.</p><p style="margin-top:10px; font-size:0.85rem;">Go to <strong>Today's Sales</strong> to add your first sale.</p></div>`;
+            <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>Start by recording sales and closing days.</p></div>`;
         }
         
         return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records (${dailyClosings.length} days)</option></select></div>
-        <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between; flex-wrap:wrap;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div><div><h3>Average Per Day</h3><div style="font-size:1.5rem;">KES ${filtered.length ? Math.round(totalRevenue/filtered.length).toLocaleString() : 0}</div></div></div>
-        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td>${r.date}</td><td>${r.totalKg}</td><td>KES ${r.cashAmount.toLocaleString()}</td><td>KES ${r.mpesaAmount.toLocaleString()}</td><td><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td>${r.closedBy}</td>${canDelete() ? `<td><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
+        <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div></div>
+        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
     }
     
     // Render Sales
@@ -663,8 +637,8 @@
         <div class="form-group"><label>🥩 Kilograms Sold</label><input type="number" id="dailyKg" step="0.1" placeholder="Enter kilograms sold"></div>
         <div class="form-group"><label>💵 Cash Amount (KES)</label><input type="number" id="dailyCash" placeholder="Enter cash amount"></div>
         <div class="form-group"><label>📲 M-Pesa Amount (KES)</label><input type="number" id="dailyMpesa" placeholder="Enter M-Pesa amount"></div>
-        <div class="action-buttons"><button class="btn btn-success" onclick="updateDailySales()"><i class="fas fa-plus-circle"></i> Add Sale</button><button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button><button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button></div>
-        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Date:</strong> ${currentDaySales.date} | <strong>Status:</strong> ${currentDaySales.isClosed ? '🔒 Closed' : '🟢 Open'}${currentDaySales.isClosed ? '<br>To record new sales, click "Start New Day"' : ''}</div>`;
+        <div class="action-buttons"><button class="btn btn-success" onclick="updateDailySales()">➕ Add Sale</button><button class="btn btn-warning" onclick="closeDay()">🔒 Close Day</button><button class="btn" onclick="startNewDay()">🌟 Start New Day</button></div>
+        <div class="alert-info"><i class="fas fa-info-circle"></i> Date: ${currentDaySales.date} | Status: ${currentDaySales.isClosed ? '🔒 Closed' : '🟢 Open'}</div>`;
     }
     
     async function renderApp() {
@@ -686,7 +660,7 @@
                 }
             }
             
-            app.innerHTML = `<div class="login-container"><i class="fas fa-drumstick-bite" style="font-size:48px; color:#3b82f6;"></i><h2 style="margin:20px 0;">Bismillah Butchery Pro</h2><div class="form-group"><label>Username</label><input type="text" id="loginUsername" placeholder="Enter your username"></div><div class="form-group"><div class="password-wrapper"><label>Password</label><input type="password" id="loginPasswordInput" placeholder="Enter your password"><button class="password-toggle" onclick="toggleLoginPassword()" type="button"><i class="fas fa-eye"></i></button></div></div><button class="btn" style="width:100%;" onclick="login(document.getElementById('loginUsername').value, document.getElementById('loginPasswordInput').value)">Login</button><button class="create-account-btn" onclick="showCreateAccountForm()" style="margin-top:15px; background:none; border:none; color:#3b82f6; cursor:pointer;">+ Create New Account</button>${showCreateAccount ? `<div class="modal"><div class="modal-content"><h3>Create Admin Account</h3><input type="text" id="createFullName" placeholder="Full Name *" style="margin:10px 0; width:100%;"><input type="text" id="createUsername" placeholder="Username *" style="margin:10px 0; width:100%;"><input type="password" id="createPassword" placeholder="Password *" style="margin:10px 0; width:100%;"><input type="password" id="createConfirmPassword" placeholder="Confirm Password *" style="margin:10px 0; width:100%;"><input type="email" id="createEmail" placeholder="Email (Optional)" style="margin:10px 0; width:100%;"><input type="tel" id="createPhone" placeholder="Phone (Optional)" style="margin:10px 0; width:100%;"><button class="btn btn-success" onclick="submitCreateAccount()" style="width:100%;">Register</button><button class="btn-delete" onclick="hideCreateAccountForm()" style="margin-top:10px; width:100%;">Cancel</button></div></div>` : ''}</div>`;
+            app.innerHTML = `<div class="login-container"><i class="fas fa-drumstick-bite" style="font-size:48px; color:#3b82f6;"></i><h2 style="margin:20px 0;">Bismillah Butchery Pro</h2><div class="form-group"><label>Username</label><input type="text" id="loginUsername" placeholder="Enter your username"></div><div class="form-group"><div class="password-wrapper"><label>Password</label><input type="password" id="loginPasswordInput" placeholder="Enter your password"><button class="password-toggle" onclick="toggleLoginPassword()" type="button"><i class="fas fa-eye"></i></button></div></div><button class="btn" style="width:100%;" onclick="login(document.getElementById('loginUsername').value, document.getElementById('loginPasswordInput').value)">Login</button><button class="create-account-btn" onclick="showCreateAccountForm()" style="margin-top:15px; background:none; border:none; color:#3b82f6; cursor:pointer;">+ Create New Account</button>${showCreateAccount ? `<div class="modal"><div class="modal-content"><h3>Create Admin Account</h3><input type="text" id="createFullName" placeholder="Full Name *" style="margin:10px 0; width:100%;"><input type="text" id="createUsername" placeholder="Username *" style="margin:10px 0; width:100%;"><input type="password" id="createPassword" placeholder="Password *" style="margin:10px 0; width:100%;"><input type="password" id="createConfirmPassword" placeholder="Confirm Password *" style="margin:10px 0; width:100%;"><input type="email" id="createEmail" placeholder="Email" style="margin:10px 0; width:100%;"><input type="tel" id="createPhone" placeholder="Phone" style="margin:10px 0; width:100%;"><button class="btn btn-success" onclick="submitCreateAccount()" style="width:100%;">Register</button><button class="btn-delete" onclick="hideCreateAccountForm()" style="margin-top:10px; width:100%;">Cancel</button></div></div>` : ''}</div>`;
             return;
         }
         
@@ -700,7 +674,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddStockModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn-add-user" onclick="showAddUserModal()"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td>${p.name}</td><td>${p.animal}</td><td>${p.stockKg}</td><td>KES ${p.priceKg}</td><td>KES ${p.costKg}</td><td>${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td><button class="btn-edit" onclick="openFullEditModal(${p.id})">Edit Stock</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `<tr><td>${e.date}</td><td>${e.category}</td><td>KES ${e.amount.toLocaleString()}</td><td>${e.description || '-'}</td><td>${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td>${u.fullName}</td><td>${u.username}</td><td class="password-cell">${visiblePasswords[u.id] ? u.password : '••••••'} <i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i></td><td><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td>${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td>${u.lastLogin || 'Never'}</td><td>${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td>${l.timestamp}</td><td>${l.user}</td><td>${l.userRole}</td><td>${l.action}</td><td>${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddStockModal()">+ Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn-add-user" onclick="showAddUserModal()">+ Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '⚠️ Low Stock' : '✓ In Stock'}</td><td style="padding:8px"><button class="btn-edit" onclick="openFullEditModal(${p.id})">Edit Stock</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport"></div><div class="form-group"><label>Amount (KES)</label><input type="number" id="expAmount"></div><div class="form-group"><label>Description</label><input id="expDesc" placeholder="Optional"></div><button class="btn btn-success" onclick="addExpense()">+ Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${visiblePasswords[u.id] && isSuperAdmin() ? u.password : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
     }
     
     // Initialize
