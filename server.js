@@ -16,13 +16,29 @@ app.use(express.static('public'));
 // Create database connection
 const db = new sqlite3.Database('./butchery.db');
 
-// Helper function to add activity log
+// Helper function to add activity log (only for important actions)
 function addActivityLog(userName, userRole, action, details) {
+    // Only log important actions to reduce database size
+    const importantActions = [
+        'Login', 'Logout', 'Sales Update', 'Day Closing', 'New Day',
+        'Edit Inventory', 'Add Product', 'Delete Product', 'Expense Added',
+        'Delete Expense', 'Create User', 'Delete User', 'Update User',
+        'System Reset', 'Delete Record'
+    ];
+    
+    // Skip logging for view-only actions
+    if (!importantActions.includes(action)) {
+        return;
+    }
+    
     db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
         [new Date().toLocaleString(), userName, userRole, action, details],
         (err) => {
             if (err) console.error('Error adding activity log:', err);
         });
+    
+    // Clean up old logs (keep only last 500 records)
+    db.run(`DELETE FROM activity_logs WHERE id NOT IN (SELECT id FROM activity_logs ORDER BY id DESC LIMIT 500)`);
 }
 
 // Initialize database tables
@@ -247,7 +263,7 @@ app.post('/api/inventory', authenticateToken, (req, res) => {
         });
 });
 
-// Update inventory - ALLOW BOTH super_admin AND admin to edit stock
+// Update inventory - BOTH super_admin AND admin can edit
 app.put('/api/inventory/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Permission denied' });
@@ -261,7 +277,7 @@ app.put('/api/inventory/:id', authenticateToken, (req, res) => {
             }
             db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
                 const userName = user ? user.fullName : req.user.username;
-                addActivityLog(userName, req.user.role, 'Edit Inventory', `Edited ${name} stock to ${stockKg} kg`);
+                addActivityLog(userName, req.user.role, 'Edit Inventory', `Edited ${name} - Stock: ${stockKg}kg, Price: ${priceKg}, Cost: ${costKg}`);
             });
             res.json({ message: 'Product updated' });
         });
@@ -316,7 +332,7 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
                 if (err) {
                     return res.status(400).json({ error: 'Update failed' });
                 }
-                // Add activity log for sales update - WORKS FOR ALL USERS
+                // Add activity log for sales update
                 addActivityLog(userName, req.user.role, 'Sales Update', `Added ${kg}kg, Cash: ${cash}, M-Pesa: ${mpesa}`);
                 res.json({ message: 'Sales updated' });
             });
@@ -557,7 +573,7 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
         db.serialize(() => {
             db.run("DELETE FROM daily_closings");
             db.run("DELETE FROM expenses");
-            db.run("DELETE FROM activity_logs");
+            db.run("DELETE FROM activity_logs"); // Clear all logs on reset
             db.run("DELETE FROM current_day_sales");
             db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)`, [today]);
             db.run("UPDATE inventory SET stockKg = 0", (err) => {
@@ -567,6 +583,7 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
                     console.log('✅ Inventory stock set to 0 for all products');
                 }
             });
+            // Add single reset log
             addActivityLog(userName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0, products preserved');
             console.log('✅ All data reset to zero by:', userName);
             res.json({ message: 'All data has been reset to zero. Stock quantities are now 0. Products preserved.' });
