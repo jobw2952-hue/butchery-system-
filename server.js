@@ -140,7 +140,7 @@ db.serialize(() => {
         }
     });
     
-    // Initialize current day sales
+    // Initialize current day sales for today
     const today = new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [today], (err, row) => {
         if (!row) {
@@ -301,7 +301,33 @@ app.delete('/api/inventory/:id', authenticateToken, (req, res) => {
     });
 });
 
-// Get current sales
+// Get sales by specific date (NEW)
+app.get('/api/sales-by-date', authenticateToken, (req, res) => {
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    db.get("SELECT * FROM current_day_sales WHERE date = ?", [date], (err, sales) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        if (!sales) {
+            db.run("INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')", [date]);
+            res.json({ date: date, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} });
+        } else {
+            let salesByProduct = {};
+            try {
+                salesByProduct = JSON.parse(sales.salesByProduct || '{}');
+            } catch(e) {
+                salesByProduct = {};
+            }
+            res.json({ 
+                ...sales, 
+                isClosed: sales.isClosed === 1,
+                salesByProduct: salesByProduct
+            });
+        }
+    });
+});
+
+// Get current sales (default - today)
 app.get('/api/current-sales', authenticateToken, (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [today], (err, sales) => {
@@ -327,12 +353,12 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
     });
 });
 
-// Update current sales
+// Update current sales with date support (UPDATED)
 app.post('/api/current-sales', authenticateToken, (req, res) => {
-    const { kg, cash, mpesa, productId, productName } = req.body;
-    const today = new Date().toISOString().split('T')[0];
+    const { kg, cash, mpesa, productId, productName, date } = req.body;
+    const saleDate = date || new Date().toISOString().split('T')[0];
     
-    db.get("SELECT salesByProduct FROM current_day_sales WHERE date = ?", [today], (err, current) => {
+    db.get("SELECT salesByProduct FROM current_day_sales WHERE date = ?", [saleDate], (err, current) => {
         let salesByProduct = {};
         if (current && current.salesByProduct) {
             try {
@@ -349,8 +375,12 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
         db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
             const userName = user ? user.fullName : req.user.username;
             
-            db.run(`UPDATE current_day_sales SET totalKg = totalKg + ?, cashAmount = cashAmount + ?, mpesaAmount = mpesaAmount + ?, salesByProduct = ? WHERE date = ? AND isClosed = 0`,
-                [kg, cash, mpesa, salesByProductStr, today], (err) => {
+            db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 
+                COALESCE((SELECT totalKg FROM current_day_sales WHERE date = ?), 0) + ?,
+                COALESCE((SELECT cashAmount FROM current_day_sales WHERE date = ?), 0) + ?,
+                COALESCE((SELECT mpesaAmount FROM current_day_sales WHERE date = ?), 0) + ?,
+                0, ?)`,
+                [saleDate, saleDate, kg, saleDate, cash, saleDate, mpesa, salesByProductStr], (err) => {
                     if (err) {
                         return res.status(400).json({ error: 'Update failed' });
                     }
@@ -359,23 +389,57 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
                         db.run(`UPDATE inventory SET stockKg = stockKg - ? WHERE id = ?`, [kg, productId]);
                     }
                     
-                    addActivityLog(userName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName || 'product'}, Cash: ${cash}, M-Pesa: ${mpesa}`);
+                    addActivityLog(userName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName || 'product'} on ${saleDate}, Cash: ${cash}, M-Pesa: ${mpesa}`);
                     res.json({ message: 'Sales updated' });
                 });
         });
     });
 });
 
-// Delete sale entry
+// Close day with date support (UPDATED)
+app.post('/api/close-day', authenticateToken, (req, res) => {
+    const date = req.body.date || new Date().toISOString().split('T')[0];
+    
+    db.get("SELECT * FROM current_day_sales WHERE date = ? AND isClosed = 0", [date], (err, sales) => {
+        if (err || !sales) {
+            return res.status(400).json({ error: 'No active day or already closed' });
+        }
+        
+        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+            const userName = user ? user.fullName : req.user.username;
+            const total = sales.cashAmount + sales.mpesaAmount;
+            
+            db.run(`INSERT INTO daily_closings (date, totalKg, cashAmount, mpesaAmount, totalRevenue, closedBy) VALUES (?, ?, ?, ?, ?, ?)`,
+                [date, sales.totalKg, sales.cashAmount, sales.mpesaAmount, total, userName], (err) => {
+                    db.run("UPDATE current_day_sales SET isClosed = 1 WHERE date = ?", [date]);
+                    addActivityLog(userName, req.user.role, 'Day Closing', `Closed day ${date} with KES ${total}`);
+                    res.json({ message: 'Day closed' });
+                });
+        });
+    });
+});
+
+// Start new day with date support (UPDATED)
+app.post('/api/new-day', authenticateToken, (req, res) => {
+    const date = req.body.date || new Date().toISOString().split('T')[0];
+    db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [date]);
+    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+        const userName = user ? user.fullName : req.user.username;
+        addActivityLog(userName, req.user.role, 'New Day', `Started new day for ${date}`);
+    });
+    res.json({ message: 'New day started' });
+});
+
+// Delete sale entry with date support (UPDATED)
 app.post('/api/delete-sale', authenticateToken, (req, res) => {
-    const { productName, kg } = req.body;
-    const today = new Date().toISOString().split('T')[0];
+    const { productName, kg, date } = req.body;
+    const saleDate = date || new Date().toISOString().split('T')[0];
     
     if (!productName || !kg) {
         return res.status(400).json({ error: 'Product name and quantity required' });
     }
     
-    db.get("SELECT salesByProduct, totalKg FROM current_day_sales WHERE date = ? AND isClosed = 0", [today], (err, current) => {
+    db.get("SELECT salesByProduct, totalKg FROM current_day_sales WHERE date = ? AND isClosed = 0", [saleDate], (err, current) => {
         if (err || !current) {
             return res.status(400).json({ error: 'No active day or sale not found' });
         }
@@ -406,7 +470,7 @@ app.post('/api/delete-sale', authenticateToken, (req, res) => {
             totalKg = totalKg - ?, 
             salesByProduct = ? 
             WHERE date = ? AND isClosed = 0`,
-            [kg, salesByProductStr, today], (err) => {
+            [kg, salesByProductStr, saleDate], (err) => {
                 if (err) {
                     return res.status(400).json({ error: 'Failed to update sales' });
                 }
@@ -415,46 +479,12 @@ app.post('/api/delete-sale', authenticateToken, (req, res) => {
                 
                 db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
                     const userName = user ? user.fullName : req.user.username;
-                    addActivityLog(userName, req.user.role, 'Delete Sale', `Deleted ${kg}kg of ${productName} and restored stock`);
+                    addActivityLog(userName, req.user.role, 'Delete Sale', `Deleted ${kg}kg of ${productName} from ${saleDate} and restored stock`);
                 });
                 
                 res.json({ message: 'Sale entry deleted and stock restored' });
             });
     });
-});
-
-// Close day
-app.post('/api/close-day', authenticateToken, (req, res) => {
-    const today = new Date().toISOString().split('T')[0];
-    
-    db.get("SELECT * FROM current_day_sales WHERE date = ? AND isClosed = 0", [today], (err, sales) => {
-        if (err || !sales) {
-            return res.status(400).json({ error: 'No active day' });
-        }
-        
-        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-            const userName = user ? user.fullName : req.user.username;
-            const total = sales.cashAmount + sales.mpesaAmount;
-            
-            db.run(`INSERT INTO daily_closings (date, totalKg, cashAmount, mpesaAmount, totalRevenue, closedBy) VALUES (?, ?, ?, ?, ?, ?)`,
-                [today, sales.totalKg, sales.cashAmount, sales.mpesaAmount, total, userName], (err) => {
-                    db.run("UPDATE current_day_sales SET isClosed = 1 WHERE date = ?", [today]);
-                    addActivityLog(userName, req.user.role, 'Day Closing', `Closed day with KES ${total}`);
-                    res.json({ message: 'Day closed' });
-                });
-        });
-    });
-});
-
-// Start new day
-app.post('/api/new-day', authenticateToken, (req, res) => {
-    const today = new Date().toISOString().split('T')[0];
-    db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
-        addActivityLog(userName, req.user.role, 'New Day', 'Started new day');
-    });
-    res.json({ message: 'New day started' });
 });
 
 // Get closings

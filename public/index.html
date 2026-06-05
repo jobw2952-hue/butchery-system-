@@ -101,16 +101,19 @@
         .profit-card { background: linear-gradient(135deg, #10b981, #059669); color: white; }
         .loss-card { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
         .chart-container { max-width: 500px; margin: 0 auto; }
+        .date-selector { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 10px; }
+        .date-selector label { margin: 0; }
+        .date-selector input { width: auto; min-width: 160px; }
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .sales-panel { grid-template-columns: 1fr; } .progress-section { grid-template-columns: 1fr; } .report-selector { flex-direction: column; align-items: stretch; } .date-range { justify-content: center; } }
         @media (max-width: 768px) { .dashboard-layout { flex-direction: column; } .sidebar { width: 100%; position: relative; } }
     </style>
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.0.0 📊 Reports+</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.1.0 📅 Sales Date Picker</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH ADVANCED REPORTS ==========
+    // ========== BISMILAH BUTCHERY PRO - WITH SALES DATE PICKER ==========
     
     const API_URL = '';
     let token = localStorage.getItem('token');
@@ -124,6 +127,7 @@
     let visiblePasswords = {};
     let revenueChart = null;
     let profitChart = null;
+    let selectedSalesDate = new Date().toISOString().split('T')[0];
     
     // Data stores
     let users = [];
@@ -176,6 +180,17 @@
         activityLogs = logsData || [];
     }
     
+    // Load sales for a specific date
+    async function loadSalesForDate(date) {
+        if (!token) return;
+        
+        const salesData = await apiCall(`/api/sales-by-date?date=${date}`);
+        if (salesData) {
+            currentDaySales = salesData;
+            renderApp();
+        }
+    }
+    
     async function login(username, password) {
         try {
             const response = await fetch('/api/login', {
@@ -217,6 +232,15 @@
     
     function setPage(page) { currentPage = page; renderApp(); }
     
+    // Change sales date
+    window.changeSalesDate = () => {
+        const datePicker = document.getElementById('salesDatePicker');
+        if (datePicker) {
+            selectedSalesDate = datePicker.value;
+            loadSalesForDate(selectedSalesDate);
+        }
+    };
+    
     // Auto calculate KG
     window.autoCalculateKg = () => {
         const productSelect = document.getElementById('saleProduct');
@@ -253,10 +277,12 @@
         
         const result = await apiCall('/api/delete-sale', 'POST', { 
             productName, 
-            kg: parseFloat(kg)
+            kg: parseFloat(kg),
+            date: selectedSalesDate
         });
         
         if (result) {
+            await loadSalesForDate(selectedSalesDate);
             await loadAllData();
             renderApp();
             alert(`✅ Sale entry deleted! Stock restored for ${productName}.`);
@@ -343,7 +369,7 @@
                 <table>
                     <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead>
                     <tbody>
-                        ${filtered.map(r => `<tr><td>${r.date}</td><td>${r.totalKg}</td><td>KES ${r.cashAmount.toLocaleString()}</td><td>KES ${r.mpesaAmount.toLocaleString()}</td><td>KES ${r.totalRevenue.toLocaleString()}</td><td>${r.closedBy}</td></tr>`).join('')}
+                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}<tr><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}
                     </tbody>
                 </table>
                 <p style="margin-top: 20px; text-align: center;">Generated on ${new Date().toLocaleString()}</p>
@@ -354,7 +380,6 @@
         printWindow.document.close();
     };
     
-    // Get filtered closings based on date range
     function getFilteredClosings() {
         let filtered = [...dailyClosings];
         
@@ -375,7 +400,6 @@
         return filtered;
     }
     
-    // Update date range for reports
     window.updateDateRange = () => {
         const startDate = document.getElementById('reportStartDate')?.value;
         const endDate = document.getElementById('reportEndDate')?.value;
@@ -397,15 +421,14 @@
         renderApp();
     };
     
-    // Sales functions
+    // Sales functions with date support
     window.updateDailySales = async () => {
-        if (currentDaySales.isClosed) return alert('Today is closed! Start a new day first.');
-        
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
         const kg = parseFloat(document.getElementById('dailyKg')?.value);
         const cash = parseFloat(document.getElementById('dailyCash')?.value);
         const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value);
+        const saleDate = document.getElementById('salesDatePicker')?.value || new Date().toISOString().split('T')[0];
         
         if (!selectedProductId || selectedProductId === '') {
             alert('Please select a product');
@@ -428,13 +451,15 @@
             productName: product.name,
             kg, 
             cash: cash || 0, 
-            mpesa: mpesa || 0 
+            mpesa: mpesa || 0,
+            date: saleDate
         });
         
         if (result) {
+            await loadSalesForDate(saleDate);
             await loadAllData();
             renderApp();
-            alert(`✅ Sold ${kg}kg of ${product.name}!`);
+            alert(`✅ Sold ${kg}kg of ${product.name} on ${saleDate}!`);
             if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
             if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
             if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
@@ -443,6 +468,7 @@
     };
     
     window.closeDay = async () => {
+        const today = selectedSalesDate;
         if (currentDaySales.isClosed) return alert('Already closed');
         if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) return alert('No sales to close');
         const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
@@ -457,9 +483,10 @@
             }
         }
         
-        if (confirm(`Close ${currentDaySales.date}?\nTotal KG: ${currentDaySales.totalKg} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${total.toLocaleString()}${salesSummary}`)) {
-            const result = await apiCall('/api/close-day', 'POST');
+        if (confirm(`Close ${today}?\nTotal KG: ${currentDaySales.totalKg} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${total.toLocaleString()}${salesSummary}`)) {
+            const result = await apiCall('/api/close-day', 'POST', { date: today });
             if (result) {
+                await loadSalesForDate(today);
                 await loadAllData();
                 renderApp();
                 alert('✅ Day closed!');
@@ -468,10 +495,11 @@
     };
     
     window.startNewDay = async () => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = selectedSalesDate;
         if (!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0)) return alert('Close current day first');
-        const result = await apiCall('/api/new-day', 'POST');
+        const result = await apiCall('/api/new-day', 'POST', { date: today });
         if (result) {
+            await loadSalesForDate(today);
             await loadAllData();
             renderApp();
             alert('✅ New day started!');
@@ -987,7 +1015,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.0.0 (Advanced Reports)\n\nFeatures:\n• Profit/Loss Calculation\n• Date Range Filter\n• Export to Excel/PDF\n• Charts & Graphs\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.1.0 (Sales Date Picker)\n\nNew Feature: Select any date to record sales!\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     function renderDashboard() {
@@ -1015,7 +1043,6 @@
         const totalRevenue = filtered.reduce((sum, r) => sum + r.totalRevenue, 0);
         const totalKg = filtered.reduce((sum, r) => sum + r.totalKg, 0);
         
-        // Calculate expenses within date range
         const filteredExpenses = expenses.filter(e => {
             const expenseDate = new Date(e.date);
             const start = reportStartDate ? new Date(reportStartDate) : null;
@@ -1028,15 +1055,12 @@
         const totalProfit = totalRevenue - totalExpenses;
         const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
         
-        // Prepare chart data
         const chartLabels = filtered.map(r => r.date).reverse();
         const chartRevenue = filtered.map(r => r.totalRevenue).reverse();
         
-        // Destroy existing charts
         if (revenueChart) revenueChart.destroy();
         if (profitChart) profitChart.destroy();
         
-        // Create charts after a short delay
         setTimeout(() => {
             const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
             const profitCtx = document.getElementById('profitChart')?.getContext('2d');
@@ -1046,19 +1070,9 @@
                     type: 'line',
                     data: {
                         labels: chartLabels,
-                        datasets: [{
-                            label: 'Revenue (KES)',
-                            data: chartRevenue,
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            fill: true,
-                            tension: 0.4
-                        }]
+                        datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 }]
                     },
-                    options: {
-                        responsive: true,
-                        plugins: { legend: { position: 'top' } }
-                    }
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
                 });
             }
             
@@ -1072,17 +1086,9 @@
                     type: 'bar',
                     data: {
                         labels: chartLabels,
-                        datasets: [{
-                            label: 'Daily Profit (KES)',
-                            data: dailyProfits,
-                            backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'),
-                            borderRadius: 8
-                        }]
+                        datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }]
                     },
-                    options: {
-                        responsive: true,
-                        plugins: { legend: { position: 'top' } }
-                    }
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
                 });
             }
         }, 100);
@@ -1112,25 +1118,16 @@
         
         <div class="card">
             <div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div>
-            <div class="chart-container">
-                <canvas id="revenueChart" height="200"></canvas>
-            </div>
+            <div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div>
         </div>
         
         <div class="card">
             <div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div>
-            <div class="chart-container">
-                <canvas id="profitChart" height="200"></canvas>
-            </div>
+            <div class="chart-container"><canvas id="profitChart" height="200"></canvas></div>
         </div>
         
         ${filtered.length === 0 ? `
-        <div class="empty-state">
-            <i class="fas fa-chart-line"></i>
-            <h3>No Reports Available</h3>
-            <p>No sales data found for the selected period.</p>
-            <p style="margin-top:10px; font-size:0.85rem;">Go to <strong>Today's Sales</strong> to add your first sale.</p>
-        </div>
+        <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>
         ` : `
         <div class="card">
             <div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div>
@@ -1138,7 +1135,7 @@
                 <table class="data-table">
                     <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead>
                     <tbody>
-                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}<tr><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}
+                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}
                     </tbody>
                 </table>
             </div>
@@ -1150,7 +1147,7 @@
                 <table class="data-table">
                     <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead>
                     <tbody>
-                        ${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td></tr>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}
+                        ${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}
                     </tbody>
                 </table>
             </div>
@@ -1160,11 +1157,23 @@
     
     function renderSales() {
         const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${p.stockKg} kg available) - KES ${p.priceKg}/kg</option>`).join('');
+        const isClosed = currentDaySales.isClosed;
+        const statusText = isClosed ? '🔒 Closed' : '🟢 Open';
         
-        return `<div class="sales-panel"><div class="sales-card"><h3>📦 Total KG Today</h3><div class="amount">${currentDaySales.totalKg} kg</div></div><div class="sales-card"><h3>💰 Cash Today</h3><div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div></div><div class="sales-card"><h3>📱 M-Pesa Today</h3><div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div></div></div>
+        return `<div class="sales-panel">
+            <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${currentDaySales.totalKg} kg</div></div>
+            <div class="sales-card"><h3>💰 Cash</h3><div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div></div>
+            <div class="sales-card"><h3>📱 M-Pesa</h3><div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div></div>
+        </div>
         
         <div class="card">
-            <div class="card-header"><h2>🛒 Record Sale by Product</h2></div>
+            <div class="card-header"><h2>📅 Select Date & Record Sale</h2></div>
+            <div class="date-selector">
+                <label><i class="fas fa-calendar-alt"></i> Sale Date:</label>
+                <input type="date" id="salesDatePicker" value="${selectedSalesDate}" onchange="changeSalesDate()">
+                <span class="alert-info" style="margin:0; padding:5px 10px;">Status: ${statusText}</span>
+                ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is closed. Start a new day to record sales.</span>' : ''}
+            </div>
             <div class="form-group">
                 <label>🥩 Select Product</label>
                 <select id="saleProduct" class="product-select" onchange="onProductChange()">
@@ -1186,15 +1195,15 @@
                 <div class="calc-note"><i class="fas fa-calculator"></i> KG is automatically calculated from Cash + M-Pesa divided by product price</div>
             </div>
             <div class="action-buttons">
-                <button class="btn btn-success" onclick="updateDailySales()"><i class="fas fa-plus-circle"></i> Add Sale</button>
-                <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>
+                <button class="btn btn-success" onclick="updateDailySales()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-plus-circle"></i> Add Sale</button>
+                <button class="btn btn-warning" onclick="closeDay()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-lock"></i> Close Day</button>
                 <button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button>
             </div>
         </div>
         
         ${currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0 ? `
         <div class="card">
-            <div class="card-header"><h2>📊 Today's Sales by Product</h2></div>
+            <div class="card-header"><h2>📊 Sales for ${selectedSalesDate}</h2></div>
             <div class="table-container">
                 <table class="data-table">
                     <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Revenue (KES)</th><th>Action</th></tr></thead>
@@ -1215,9 +1224,9 @@
                 <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
         </div>
-        ` : ''}
+        ` : `<div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. Select a product and add sale above.</div>`}
         
-        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Date:</strong> ${currentDaySales.date} | <strong>Status:</strong> ${currentDaySales.isClosed ? '🔒 Closed' : '🟢 Open'}${currentDaySales.isClosed ? '<br>To record new sales, click "Start New Day"' : ''}</div>`;
+        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Change the date above to record sales for any day, past or present!</div>`;
     }
     
     function renderExpenses() {
@@ -1249,7 +1258,7 @@
                 <table class="data-table">
                     <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead>
                     <tbody>
-                        ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `
+                        ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `
                             <tr>
                                 <td style="padding:8px">${e.date}</td>
                                 <td style="padding:8px">${e.category}</td>
@@ -1297,7 +1306,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<td><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><td><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
     }
     
     // Initialize
