@@ -18,7 +18,6 @@ const db = new sqlite3.Database('./butchery.db');
 
 // Helper function to add activity log (only for important actions)
 function addActivityLog(userName, userRole, action, details) {
-    // Only log important actions to reduce database size
     const importantActions = [
         'Login', 'Logout', 'Sales Update', 'Day Closing', 'New Day',
         'Edit Inventory', 'Add Product', 'Delete Product', 'Expense Added',
@@ -26,7 +25,6 @@ function addActivityLog(userName, userRole, action, details) {
         'System Reset', 'Delete Record'
     ];
     
-    // Skip logging for view-only actions
     if (!importantActions.includes(action)) {
         return;
     }
@@ -82,7 +80,8 @@ db.serialize(() => {
         totalKg REAL DEFAULT 0,
         cashAmount REAL DEFAULT 0,
         mpesaAmount REAL DEFAULT 0,
-        isClosed INTEGER DEFAULT 0
+        isClosed INTEGER DEFAULT 0,
+        salesByProduct TEXT DEFAULT '{}'
     )`);
     
     db.run(`CREATE TABLE IF NOT EXISTS expenses (
@@ -145,7 +144,7 @@ db.serialize(() => {
     const today = new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [today], (err, row) => {
         if (!row) {
-            db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)`, [today]);
+            db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
             console.log('✅ Current day sales initialized');
         }
     });
@@ -311,31 +310,63 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
             return res.status(500).json({ error: err.message });
         }
         if (!sales) {
-            db.run("INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)", [today]);
-            res.json({ date: today, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false });
+            db.run("INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')", [today]);
+            res.json({ date: today, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} });
         } else {
-            res.json({ ...sales, isClosed: sales.isClosed === 1 });
+            let salesByProduct = {};
+            try {
+                salesByProduct = JSON.parse(sales.salesByProduct || '{}');
+            } catch(e) {
+                salesByProduct = {};
+            }
+            res.json({ 
+                ...sales, 
+                isClosed: sales.isClosed === 1,
+                salesByProduct: salesByProduct
+            });
         }
     });
 });
 
 // Update current sales
 app.post('/api/current-sales', authenticateToken, (req, res) => {
-    const { kg, cash, mpesa } = req.body;
+    const { kg, cash, mpesa, productId, productName } = req.body;
     const today = new Date().toISOString().split('T')[0];
     
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
+    // First, get current sales to update salesByProduct
+    db.get("SELECT salesByProduct FROM current_day_sales WHERE date = ?", [today], (err, current) => {
+        let salesByProduct = {};
+        if (current && current.salesByProduct) {
+            try {
+                salesByProduct = JSON.parse(current.salesByProduct);
+            } catch(e) {}
+        }
         
-        db.run(`UPDATE current_day_sales SET totalKg = totalKg + ?, cashAmount = cashAmount + ?, mpesaAmount = mpesaAmount + ? WHERE date = ? AND isClosed = 0`,
-            [kg, cash, mpesa, today], (err) => {
-                if (err) {
-                    return res.status(400).json({ error: 'Update failed' });
-                }
-                // Add activity log for sales update
-                addActivityLog(userName, req.user.role, 'Sales Update', `Added ${kg}kg, Cash: ${cash}, M-Pesa: ${mpesa}`);
-                res.json({ message: 'Sales updated' });
-            });
+        // Update the product quantity
+        if (productName) {
+            salesByProduct[productName] = (salesByProduct[productName] || 0) + kg;
+        }
+        
+        const salesByProductStr = JSON.stringify(salesByProduct);
+        
+        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+            const userName = user ? user.fullName : req.user.username;
+            
+            db.run(`UPDATE current_day_sales SET totalKg = totalKg + ?, cashAmount = cashAmount + ?, mpesaAmount = mpesaAmount + ?, salesByProduct = ? WHERE date = ? AND isClosed = 0`,
+                [kg, cash, mpesa, salesByProductStr, today], (err) => {
+                    if (err) {
+                        return res.status(400).json({ error: 'Update failed' });
+                    }
+                    
+                    // Update inventory stock
+                    if (productId && productName) {
+                        db.run(`UPDATE inventory SET stockKg = stockKg - ? WHERE id = ?`, [kg, productId]);
+                    }
+                    
+                    addActivityLog(userName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName || 'product'}, Cash: ${cash}, M-Pesa: ${mpesa}`);
+                    res.json({ message: 'Sales updated' });
+                });
+        });
     });
 });
 
@@ -365,7 +396,7 @@ app.post('/api/close-day', authenticateToken, (req, res) => {
 // Start new day
 app.post('/api/new-day', authenticateToken, (req, res) => {
     const today = new Date().toISOString().split('T')[0];
-    db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)`, [today]);
+    db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
     db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
         const userName = user ? user.fullName : req.user.username;
         addActivityLog(userName, req.user.role, 'New Day', 'Started new day');
@@ -406,20 +437,20 @@ app.get('/api/expenses', authenticateToken, (req, res) => {
     });
 });
 
-// Add expense
+// Add expense (with custom date) - UPDATED WITH DATE PICKER
 app.post('/api/expenses', authenticateToken, (req, res) => {
-    const { category, amount, description } = req.body;
-    const today = new Date().toISOString().split('T')[0];
+    const { category, amount, description, date } = req.body;
+    const expenseDate = date || new Date().toISOString().split('T')[0];
     
     db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
         const userName = user ? user.fullName : req.user.username;
         
         db.run(`INSERT INTO expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
-            [today, category, amount, description || ''], function(err) {
+            [expenseDate, category, amount, description || ''], function(err) {
                 if (err) {
                     return res.status(400).json({ error: 'Failed to add expense' });
                 }
-                addActivityLog(userName, req.user.role, 'Expense Added', `${category}: KES ${amount}`);
+                addActivityLog(userName, req.user.role, 'Expense Added', `${category}: KES ${amount} on ${expenseDate}`);
                 res.json({ id: this.lastID, message: 'Expense added' });
             });
     });
@@ -573,9 +604,9 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
         db.serialize(() => {
             db.run("DELETE FROM daily_closings");
             db.run("DELETE FROM expenses");
-            db.run("DELETE FROM activity_logs"); // Clear all logs on reset
+            db.run("DELETE FROM activity_logs");
             db.run("DELETE FROM current_day_sales");
-            db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)`, [today]);
+            db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
             db.run("UPDATE inventory SET stockKg = 0", (err) => {
                 if (err) {
                     console.error('Error resetting inventory:', err);
@@ -583,7 +614,6 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
                     console.log('✅ Inventory stock set to 0 for all products');
                 }
             });
-            // Add single reset log
             addActivityLog(userName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0, products preserved');
             console.log('✅ All data reset to zero by:', userName);
             res.json({ message: 'All data has been reset to zero. Stock quantities are now 0. Products preserved.' });
