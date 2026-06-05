@@ -55,6 +55,9 @@
         .btn-edit:hover { background: #2563eb; }
         .btn-add-user { background: #10b981; padding: 8px 16px; font-size: 0.8rem; border-radius: 8px; color: white; cursor: pointer; border: none; }
         .btn-add-user:hover { background: #059669; }
+        .eye-icon { cursor: pointer; margin-left: 8px; color: #94a3b8; }
+        .eye-icon:hover { color: #3b82f6; }
+        .password-cell { display: flex; align-items: center; gap: 8px; }
         input, select, textarea { width: 100%; padding: 10px 14px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 0.9rem; }
         input:focus, select:focus { outline: none; border-color: #3b82f6; }
         .form-group { margin-bottom: 16px; }
@@ -84,7 +87,6 @@
         .action-buttons { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; justify-content: center; }
         .report-selector { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 12px; }
         .alert-info { background: #e0f2fe; padding: 12px; border-radius: 10px; margin-top: 15px; color: #0369a1; }
-        .password-cell { font-family: monospace; font-size: 0.8rem; color: #94a3b8; }
         .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
         .empty-state i { font-size: 64px; margin-bottom: 20px; opacity: 0.5; }
         .reset-confirm-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 2000; }
@@ -112,6 +114,7 @@
     let showAddUserModal = false;
     let selectedReport = 'daily';
     let loginPasswordVisible = false;
+    let visiblePasswords = {};
     
     // Data stores
     let users = [];
@@ -202,8 +205,15 @@
     function canManageUsers() { return isSuperAdmin(); }
     function canViewLogs() { return isSuperAdmin(); }
     function canDelete() { return isSuperAdmin(); }
+    function canEditInventory() { return isSuperAdmin() || currentUser?.role === 'admin'; }
     
     function setPage(page) { currentPage = page; renderApp(); }
+    
+    // Toggle password visibility
+    window.togglePasswordVisibility = (userId) => {
+        visiblePasswords[userId] = !visiblePasswords[userId];
+        renderApp();
+    };
     
     // RESET ALL DATA FUNCTION
     window.resetAllData = async () => {
@@ -262,7 +272,7 @@
         if (modal) modal.remove();
     };
     
-    // ADD USER FUNCTION - FIXED
+    // ADD USER FUNCTION
     window.showAddUserModal = () => {
         if (!isSuperAdmin()) {
             alert('Only Super Admin can add users');
@@ -411,7 +421,7 @@
         }
     };
     
-    // Inventory functions
+    // Inventory functions - Admin can edit stock
     window.openFullEditModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
@@ -428,7 +438,7 @@
     };
     
     window.deleteInventoryProduct = async (productId) => {
-        if (!canDelete()) return alert('Only Super Admin can delete');
+        if (!canDelete()) return alert('Only Super Admin can delete products');
         const product = inventory.find(p => p.id === productId);
         if (product && confirm(`Delete "${product.name}"? This cannot be undone.`)) {
             const result = await apiCall(`/api/inventory/${productId}`, 'DELETE');
@@ -441,7 +451,7 @@
     };
     
     window.openAddStockModal = async () => {
-        if (!canDelete()) return alert('Only Super Admin can add products');
+        if (!isSuperAdmin()) return alert('Only Super Admin can add products');
         const name = prompt('Product name:');
         const animal = prompt('Animal (Cow/Goat/Chicken/Liver):');
         const stock = parseFloat(prompt('Stock kg:'));
@@ -618,13 +628,17 @@
             .filter(r => new Date(r.date) >= sevenDaysAgo)
             .reduce((sum, r) => sum + r.totalRevenue, 0);
         
+        // Get recent activities for dashboard
+        const recentActivities = activityLogs.slice(0, 5);
+        
         return `<div class="stats-grid">
             <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${todayTotal.toLocaleString()}</div><div class="stat-change">${currentDaySales.totalKg} kg sold today</div></div>
             <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${totalInventoryValue.toLocaleString()}</div><div class="stat-change">Based on cost price</div></div>
             <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div><div class="stat-change">Items below threshold</div></div>
             <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${weeklyRevenue.toLocaleString()}</div><div class="stat-change">From ${dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).length} closed days</div></div>
         </div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${item.stockKg} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
+        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${item.stockKg} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>
+        <div class="card"><div class="card-header"><h2><i class="fas fa-history"></i> Recent Activities</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>${recentActivities.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No activities yet</td></tr>' : recentActivities.map(l => `<tr><td>${l.timestamp}</td><td>${l.user}</td><td>${l.action}</td><td>${l.details}</td></tr>`).join('')}</tbody></table></div></div>`;
     }
     
     // Render Reports
@@ -640,7 +654,7 @@
         
         return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records (${dailyClosings.length} days)</option></select></div>
         <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between; flex-wrap:wrap;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div><div><h3>Average Per Day</h3><div style="font-size:1.5rem;">KES ${filtered.length ? Math.round(totalRevenue/filtered.length).toLocaleString() : 0}</div></div></div>
-        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td class="px-4 py-2">${r.date}</td><td class="px-4 py-2">${r.totalKg}</td><td class="px-4 py-2">KES ${r.cashAmount.toLocaleString()}</td><td class="px-4 py-2">KES ${r.mpesaAmount.toLocaleString()}</td><td class="px-4 py-2"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td class="px-4 py-2">${r.closedBy}</td>${canDelete() ? `<td class="px-4 py-2"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
+        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td>${r.date}</td><td>${r.totalKg}</td><td>KES ${r.cashAmount.toLocaleString()}</td><td>KES ${r.mpesaAmount.toLocaleString()}</td><td><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td>${r.closedBy}</td>${canDelete() ? `<td><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
     }
     
     // Render Sales
@@ -686,7 +700,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddStockModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn-add-user" onclick="showAddUserModal()"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td class="px-4 py-2">${p.name}</td><td class="px-4 py-2">${p.animal}</td><td class="px-4 py-2">${p.stockKg}</td><td class="px-4 py-2">KES ${p.priceKg}</td><td class="px-4 py-2">KES ${p.costKg}</td><td class="px-4 py-2">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td class="px-4 py-2"><button class="btn-edit" onclick="openFullEditModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `<tr><td class="px-4 py-2">${e.date}</td><td class="px-4 py-2">${e.category}</td><td class="px-4 py-2">KES ${e.amount.toLocaleString()}</td><td class="px-4 py-2">${e.description || '-'}</td><td class="px-4 py-2">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td class="px-4 py-2">${u.fullName}</td><td class="px-4 py-2">${u.username}</td><td class="px-4 py-2 password-cell">••••••</td><td class="px-4 py-2"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td class="px-4 py-2">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td class="px-4 py-2">${u.lastLogin || 'Never'}</td><td class="px-4 py-2">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td class="px-4 py-2">${l.timestamp}</td><td class="px-4 py-2">${l.user}</td><td class="px-4 py-2">${l.userRole}</td><td class="px-4 py-2">${l.action}</td><td class="px-4 py-2">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddStockModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn-add-user" onclick="showAddUserModal()"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td>${p.name}</td><td>${p.animal}</td><td>${p.stockKg}</td><td>KES ${p.priceKg}</td><td>KES ${p.costKg}</td><td>${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td><button class="btn-edit" onclick="openFullEditModal(${p.id})">Edit Stock</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `<tr><td>${e.date}</td><td>${e.category}</td><td>KES ${e.amount.toLocaleString()}</td><td>${e.description || '-'}</td><td>${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td>${u.fullName}</td><td>${u.username}</td><td class="password-cell">${visiblePasswords[u.id] ? u.password : '••••••'} <i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i></td><td><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td>${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td>${u.lastLogin || 'Never'}</td><td>${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td>${l.timestamp}</td><td>${l.user}</td><td>${l.userRole}</td><td>${l.action}</td><td>${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
     }
     
     // Initialize
