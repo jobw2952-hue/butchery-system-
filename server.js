@@ -16,6 +16,22 @@ app.use(express.static('public'));
 // Create database connection
 const db = new sqlite3.Database('./butchery.db');
 
+// Helper function to get correct local time (East Africa Time - UTC+3)
+function getLocalTimestamp() {
+    const now = new Date();
+    // Format: 6/5/2026, 2:30:45 PM
+    return now.toLocaleString('en-US', {
+        timeZone: 'Africa/Nairobi',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+}
+
 // Helper function to add activity log
 function addActivityLog(userName, userRole, action, details) {
     const importantActions = [
@@ -29,8 +45,10 @@ function addActivityLog(userName, userRole, action, details) {
         return;
     }
     
+    const timestamp = getLocalTimestamp();
+    
     db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
-        [new Date().toLocaleString(), userName, userRole, action, details],
+        [timestamp, userName, userRole, action, details],
         (err) => {
             if (err) console.error('Error adding activity log:', err);
         });
@@ -109,7 +127,7 @@ db.serialize(() => {
         if (!row) {
             db.run(`INSERT INTO users (username, password, role, fullName, email, phone, isActive, createdAt) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                ['superadmin', hashedPassword, 'super_admin', 'Super Admin', 'super@butchery.com', '0712345678', 1, new Date().toISOString()]);
+                ['superadmin', hashedPassword, 'super_admin', 'Super Admin', 'super@butchery.com', '0712345678', 1, getLocalTimestamp()]);
             console.log('✅ Super Admin user created');
         }
     });
@@ -118,7 +136,7 @@ db.serialize(() => {
         if (!row) {
             db.run(`INSERT INTO users (username, password, role, fullName, email, phone, isActive, createdAt) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                ['admin1', hashedPassword, 'admin', 'John Admin', 'john@butchery.com', '0723456789', 1, new Date().toISOString()]);
+                ['admin1', hashedPassword, 'admin', 'John Admin', 'john@butchery.com', '0723456789', 1, getLocalTimestamp()]);
             console.log('✅ Admin user created');
         }
     });
@@ -194,7 +212,7 @@ app.post('/api/login', (req, res) => {
         }
         
         // Update last login
-        db.run("UPDATE users SET lastLogin = ? WHERE id = ?", [new Date().toLocaleString(), user.id]);
+        db.run("UPDATE users SET lastLogin = ? WHERE id = ?", [getLocalTimestamp(), user.id]);
         
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.role, fullName: user.fullName }, 
@@ -301,7 +319,7 @@ app.delete('/api/inventory/:id', authenticateToken, (req, res) => {
     });
 });
 
-// Get sales by specific date (NEW)
+// Get sales by specific date
 app.get('/api/sales-by-date', authenticateToken, (req, res) => {
     const date = req.query.date || new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [date], (err, sales) => {
@@ -353,7 +371,7 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
     });
 });
 
-// Update current sales with date support (UPDATED)
+// Update current sales with date support
 app.post('/api/current-sales', authenticateToken, (req, res) => {
     const { kg, cash, mpesa, productId, productName, date } = req.body;
     const saleDate = date || new Date().toISOString().split('T')[0];
@@ -396,7 +414,7 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
     });
 });
 
-// Close day with date support (UPDATED)
+// Close day with date support
 app.post('/api/close-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
     
@@ -419,7 +437,7 @@ app.post('/api/close-day', authenticateToken, (req, res) => {
     });
 });
 
-// Start new day with date support (UPDATED)
+// Start new day with date support
 app.post('/api/new-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
     db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [date]);
@@ -430,7 +448,7 @@ app.post('/api/new-day', authenticateToken, (req, res) => {
     res.json({ message: 'New day started' });
 });
 
-// Delete sale entry with date support (UPDATED)
+// Delete sale entry with date support
 app.post('/api/delete-sale', authenticateToken, (req, res) => {
     const { productName, kg, date } = req.body;
     const saleDate = date || new Date().toISOString().split('T')[0];
@@ -575,7 +593,7 @@ app.post('/api/users', authenticateToken, (req, res) => {
     const hashedPassword = bcrypt.hashSync(password, 10);
     
     db.run(`INSERT INTO users (username, password, role, fullName, email, phone, isActive, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [username, hashedPassword, role || 'admin', fullName, email || '', phone || '', 1, new Date().toISOString()],
+        [username, hashedPassword, role || 'admin', fullName, email || '', phone || '', 1, getLocalTimestamp()],
         function(err) {
             if (err) {
                 return res.status(400).json({ error: 'Username already exists' });
