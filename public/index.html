@@ -15,7 +15,7 @@
         .app-container { max-width: 1600px; margin: 0 auto; padding: 20px 24px; }
         .version-badge { position: fixed; bottom: 10px; right: 10px; background: #64748b; color: white; padding: 4px 10px; border-radius: 20px; font-size: 10px; z-index: 999; cursor: pointer; }
         .version-badge:hover { background: #3b82f6; }
-        .password-wrapper { position: relative; width: 100%; }
+        .password-wrapper { position: relative; width: 100%; display: inline-block; }
         .password-wrapper input { width: 100%; padding: 12px 45px 12px 16px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; font-size: 0.9rem; }
         .password-wrapper .password-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1.1rem; padding: 0; }
         .password-wrapper .password-toggle:hover { color: #3b82f6; }
@@ -81,7 +81,7 @@
         .report-selector { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 12px; }
         .alert-info { background: #e0f2fe; padding: 12px; border-radius: 10px; margin-top: 15px; color: #0369a1; }
         .password-cell { display: flex; align-items: center; gap: 8px; font-family: monospace; }
-        .eye-icon { cursor: pointer; color: #94a3b8; }
+        .eye-icon { cursor: pointer; color: #94a3b8; margin-left: 5px; }
         .eye-icon:hover { color: #3b82f6; }
         .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
         .empty-state i { font-size: 64px; margin-bottom: 20px; opacity: 0.5; }
@@ -98,10 +98,10 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v6.2.0 🔗 Auto KG Calculator</div>
+<div class="version-badge" onclick="showVersionInfo()">v6.3.0 🔗 Auto KG + Date Picker</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH AUTO KG CALCULATION ==========
+    // ========== BISMILAH BUTCHERY PRO - WITH AUTO KG & EXPENSE DATE PICKER ==========
     
     const API_URL = '';
     let token = localStorage.getItem('token');
@@ -222,7 +222,6 @@
             const kgInput = document.getElementById('dailyKg');
             if (kgInput) {
                 kgInput.value = calculatedKg.toFixed(2);
-                // Add a small visual feedback
                 kgInput.style.backgroundColor = '#d1fae5';
                 setTimeout(() => {
                     kgInput.style.backgroundColor = '#f8fafc';
@@ -231,16 +230,57 @@
         }
     };
     
-    // Also calculate when product changes
     window.onProductChange = () => {
-        // Reset kg field when product changes
         const kgInput = document.getElementById('dailyKg');
         if (kgInput) kgInput.value = '';
-        // Recalculate if there are amounts entered
         autoCalculateKg();
     };
     
-    // Sales functions with AUTO KG CALCULATION
+    // Expense with date picker
+    window.addExpenseWithDate = async () => {
+        const category = document.getElementById('expCategory')?.value;
+        const amount = parseFloat(document.getElementById('expAmount')?.value);
+        const description = document.getElementById('expDesc')?.value;
+        const expenseDate = document.getElementById('expenseDate')?.value;
+        
+        if (!category || isNaN(amount) || amount <= 0) return alert('Enter valid expense');
+        if (!expenseDate) return alert('Please select a date');
+        
+        const result = await apiCall('/api/expenses', 'POST', { 
+            category, 
+            amount, 
+            description: description || '',
+            date: expenseDate
+        });
+        
+        if (result) {
+            await loadAllData();
+            renderApp();
+            if (document.getElementById('expCategory')) document.getElementById('expCategory').value = '';
+            if (document.getElementById('expAmount')) document.getElementById('expAmount').value = '';
+            if (document.getElementById('expDesc')) document.getElementById('expDesc').value = '';
+            if (document.getElementById('expenseDate')) document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
+            alert('✅ Expense added');
+        }
+    };
+    
+    // Toggle password visibility
+    window.togglePasswordVisibility = (userId) => {
+        if (!isSuperAdmin()) {
+            alert('Only Super Admin can view passwords');
+            return;
+        }
+        visiblePasswords[userId] = !visiblePasswords[userId];
+        renderApp();
+    };
+    
+    window.toggleLoginPassword = () => {
+        loginPasswordVisible = !loginPasswordVisible;
+        const input = document.getElementById('loginPasswordInput');
+        if (input) input.type = loginPasswordVisible ? 'text' : 'password';
+    };
+    
+    // Sales functions
     window.updateDailySales = async () => {
         if (currentDaySales.isClosed) return alert('Today is closed! Start a new day first.');
         
@@ -261,13 +301,11 @@
         const product = inventory.find(p => p.id == selectedProductId);
         if (!product) return alert('Product not found');
         
-        // Check if enough stock
         if (product.stockKg < kg) {
             alert(`Not enough stock! Only ${product.stockKg} kg available for ${product.name}`);
             return;
         }
         
-        // Verify that the amount matches the kg (optional warning)
         const expectedAmount = kg * product.priceKg;
         const enteredAmount = cash + mpesa;
         if (Math.abs(expectedAmount - enteredAmount) > 1) {
@@ -288,7 +326,6 @@
             await loadAllData();
             renderApp();
             alert(`✅ Sold ${kg}kg of ${product.name} for KES ${(kg * product.priceKg).toLocaleString()}!`);
-            // Clear fields after successful sale
             if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
             if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
             if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
@@ -332,16 +369,7 @@
         }
     };
     
-    // The rest of the functions remain exactly the same
-    window.togglePasswordVisibility = (userId) => {
-        if (!isSuperAdmin()) {
-            alert('Only Super Admin can view passwords');
-            return;
-        }
-        visiblePasswords[userId] = !visiblePasswords[userId];
-        renderApp();
-    };
-    
+    // Reset function
     window.resetAllData = () => {
         if (!isSuperAdmin()) {
             alert('Only Super Admin can reset all data!');
@@ -398,6 +426,7 @@
         if (modal) modal.remove();
     };
     
+    // User functions
     window.showAddUserModal = () => {
         if (!isSuperAdmin()) {
             alert('Only Super Admin can add users');
@@ -502,6 +531,7 @@
         }
     };
     
+    // Product edit functions
     window.openEditProductModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
@@ -684,23 +714,7 @@
         }
     };
     
-    window.addExpense = async () => {
-        const category = document.getElementById('expCategory')?.value;
-        const amount = parseFloat(document.getElementById('expAmount')?.value);
-        const description = document.getElementById('expDesc')?.value;
-        if (!category || isNaN(amount) || amount <= 0) return alert('Enter valid expense');
-        
-        const result = await apiCall('/api/expenses', 'POST', { category, amount, description: description || '' });
-        if (result) {
-            await loadAllData();
-            renderApp();
-            if (document.getElementById('expCategory')) document.getElementById('expCategory').value = '';
-            if (document.getElementById('expAmount')) document.getElementById('expAmount').value = '';
-            if (document.getElementById('expDesc')) document.getElementById('expDesc').value = '';
-            alert('✅ Expense added');
-        }
-    };
-    
+    // Expense delete
     window.deleteExpense = async (expenseId) => {
         if (!canDelete()) return alert('Only Super Admin can delete expenses');
         const expense = expenses.find(e => e.id === expenseId);
@@ -821,14 +835,9 @@
     };
     
     window.changeReport = (value) => { selectedReport = value; renderApp(); };
-    window.toggleLoginPassword = () => {
-        loginPasswordVisible = !loginPasswordVisible;
-        const input = document.getElementById('loginPasswordInput');
-        if (input) input.type = loginPasswordVisible ? 'text' : 'password';
-    };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 6.2.0 (Auto KG Calculator)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products\n\nNew: Enter amount (Cash/M-Pesa) and KG auto-calculates based on product price!`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 6.3.0 (Auto KG Calculator + Expense Date Picker)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     function renderDashboard() {
@@ -857,16 +866,17 @@
         
         if (filtered.length === 0) {
             return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records</option></select></div>
-            <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>Start by recording sales and closing days.</p><p style="margin-top:10px; font-size:0.85rem;">Go to <strong>Today's Sales</strong> to add your first sale.</p></div>`;
+            <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>Start by recording sales and closing days.</p></div>`;
         }
         
         return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records (${dailyClosings.length} days)</option></select></div>
-        <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between; flex-wrap:wrap;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div><div><h3>Average Per Day</h3><div style="font-size:1.5rem;">KES ${filtered.length ? Math.round(totalRevenue/filtered.length).toLocaleString() : 0}</div></div></div>
-        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
+        <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div></div>
+        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
     }
     
     function renderSales() {
         const productOptions = inventory.map(p => `<option value="${p.id}">${p.name} (${p.stockKg} kg available) - KES ${p.priceKg}/kg</option>`).join('');
+        const today = new Date().toISOString().split('T')[0];
         
         return `<div class="sales-panel"><div class="sales-card"><h3>📦 Total KG Today</h3><div class="amount">${currentDaySales.totalKg} kg</div></div><div class="sales-card"><h3>💰 Cash Today</h3><div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div></div><div class="sales-card"><h3>📱 M-Pesa Today</h3><div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div></div></div>
         
@@ -889,7 +899,7 @@
             </div>
             <div class="form-group">
                 <label>📦 Quantity Sold (kg) - Auto Calculated</label>
-                <input type="number" id="dailyKg" step="0.1" placeholder="Auto-calculated based on amount" readonly style="background-color:#f3f4f6; cursor:not-allowed;">
+                <input type="number" id="dailyKg" step="0.1" placeholder="Auto-calculated" readonly style="background-color:#f3f4f6; cursor:not-allowed;">
                 <div class="calc-note"><i class="fas fa-calculator"></i> KG is automatically calculated from Cash + M-Pesa divided by product price</div>
             </div>
             <div class="action-buttons">
@@ -917,7 +927,51 @@
         </div>
         ` : ''}
         
-        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Date:</strong> ${currentDaySales.date} | <strong>Status:</strong> ${currentDaySales.isClosed ? '🔒 Closed' : '🟢 Open'}${currentDaySales.isClosed ? '<br>To record new sales, click "Start New Day"' : ''}<br><i class="fas fa-magic"></i> <strong>Auto Calculate:</strong> Enter Cash or M-Pesa amount, KG will auto-calculate based on selected product price!</div>`;
+        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Date:</strong> ${currentDaySales.date} | <strong>Status:</strong> ${currentDaySales.isClosed ? '🔒 Closed' : '🟢 Open'}${currentDaySales.isClosed ? '<br>To record new sales, click "Start New Day"' : ''}</div>`;
+    }
+    
+    function renderExpenses() {
+        const today = new Date().toISOString().split('T')[0];
+        
+        return `<div class="card">
+            <div class="card-header"><h2>💰 Add Expense</h2></div>
+            <div class="form-group">
+                <label>Expense Category</label>
+                <input id="expCategory" placeholder="e.g., Transport, Utilities, Rent">
+            </div>
+            <div class="form-group">
+                <label>Amount (KES)</label>
+                <input id="expAmount" type="number" placeholder="Enter amount">
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input id="expenseDate" type="date" value="${today}">
+            </div>
+            <div class="form-group">
+                <label>Description (Optional)</label>
+                <textarea id="expDesc" placeholder="Additional details"></textarea>
+            </div>
+            <button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button>
+        </div>
+        <div class="card">
+            <div class="card-header"><h2>📋 Expense History</h2></div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead>
+                    <tbody>
+                        ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `
+                            <tr>
+                                <td style="padding:8px">${e.date}</td>
+                                <td style="padding:8px">${e.category}</td>
+                                <td style="padding:8px">KES ${e.amount.toLocaleString()}</td>
+                                <td style="padding:8px">${e.description || '-'}</td>
+                                <td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
     }
     
     async function renderApp() {
@@ -953,7 +1007,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}<tr><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit Product</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<td><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></td>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}<tr></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}<td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
     }
     
     // Initialize
