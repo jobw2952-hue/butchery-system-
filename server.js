@@ -16,9 +16,17 @@ app.use(express.static('public'));
 // Create database connection
 const db = new sqlite3.Database('./butchery.db');
 
+// Helper function to add activity log
+function addActivityLog(userName, userRole, action, details) {
+    db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
+        [new Date().toLocaleString(), userName, userRole, action, details],
+        (err) => {
+            if (err) console.error('Error adding activity log:', err);
+        });
+}
+
 // Initialize database tables
 db.serialize(() => {
-    // Create users table
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -32,7 +40,6 @@ db.serialize(() => {
         lastLogin TEXT
     )`);
     
-    // Create inventory table
     db.run(`CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -43,7 +50,6 @@ db.serialize(() => {
         lowStockAlert REAL NOT NULL
     )`);
     
-    // Create daily_closings table
     db.run(`CREATE TABLE IF NOT EXISTS daily_closings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
@@ -54,7 +60,6 @@ db.serialize(() => {
         closedBy TEXT NOT NULL
     )`);
     
-    // Create current_day_sales table
     db.run(`CREATE TABLE IF NOT EXISTS current_day_sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL UNIQUE,
@@ -64,7 +69,6 @@ db.serialize(() => {
         isClosed INTEGER DEFAULT 0
     )`);
     
-    // Create expenses table
     db.run(`CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
@@ -73,7 +77,6 @@ db.serialize(() => {
         description TEXT
     )`);
     
-    // Create activity_logs table
     db.run(`CREATE TABLE IF NOT EXISTS activity_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT NOT NULL,
@@ -186,6 +189,9 @@ app.post('/api/login', (req, res) => {
         
         console.log(`✅ Login successful: ${username} (${user.role})`);
         
+        // Add login to activity log
+        addActivityLog(user.fullName, user.role, 'Login', `${user.fullName} logged in`);
+        
         res.json({
             success: true,
             token,
@@ -233,13 +239,16 @@ app.post('/api/inventory', authenticateToken, (req, res) => {
             if (err) {
                 return res.status(400).json({ error: 'Failed to add product' });
             }
+            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+                const userName = user ? user.fullName : req.user.username;
+                addActivityLog(userName, req.user.role, 'Add Product', `Added product: ${name}`);
+            });
             res.json({ id: this.lastID, message: 'Product added' });
         });
 });
 
 // Update inventory - ALLOW BOTH super_admin AND admin to edit stock
 app.put('/api/inventory/:id', authenticateToken, (req, res) => {
-    // Allow both super_admin and admin to edit inventory
     if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Permission denied' });
     }
@@ -250,6 +259,10 @@ app.put('/api/inventory/:id', authenticateToken, (req, res) => {
             if (err) {
                 return res.status(400).json({ error: 'Update failed' });
             }
+            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+                const userName = user ? user.fullName : req.user.username;
+                addActivityLog(userName, req.user.role, 'Edit Inventory', `Edited ${name} stock to ${stockKg} kg`);
+            });
             res.json({ message: 'Product updated' });
         });
 });
@@ -259,11 +272,18 @@ app.delete('/api/inventory/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') {
         return res.status(403).json({ error: 'Permission denied' });
     }
-    db.run("DELETE FROM inventory WHERE id = ?", [req.params.id], (err) => {
-        if (err) {
-            return res.status(400).json({ error: 'Delete failed' });
-        }
-        res.json({ message: 'Product deleted' });
+    db.get("SELECT name FROM inventory WHERE id = ?", [req.params.id], (err, product) => {
+        const productName = product ? product.name : 'Unknown';
+        db.run("DELETE FROM inventory WHERE id = ?", [req.params.id], (err) => {
+            if (err) {
+                return res.status(400).json({ error: 'Delete failed' });
+            }
+            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+                const userName = user ? user.fullName : req.user.username;
+                addActivityLog(userName, req.user.role, 'Delete Product', `Deleted product: ${productName}`);
+            });
+            res.json({ message: 'Product deleted' });
+        });
     });
 });
 
@@ -296,8 +316,8 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
                 if (err) {
                     return res.status(400).json({ error: 'Update failed' });
                 }
-                db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
-                    [new Date().toLocaleString(), userName, req.user.role, 'Sales Update', `Added ${kg}kg, Cash: ${cash}, M-Pesa: ${mpesa}`]);
+                // Add activity log for sales update - WORKS FOR ALL USERS
+                addActivityLog(userName, req.user.role, 'Sales Update', `Added ${kg}kg, Cash: ${cash}, M-Pesa: ${mpesa}`);
                 res.json({ message: 'Sales updated' });
             });
     });
@@ -319,8 +339,7 @@ app.post('/api/close-day', authenticateToken, (req, res) => {
             db.run(`INSERT INTO daily_closings (date, totalKg, cashAmount, mpesaAmount, totalRevenue, closedBy) VALUES (?, ?, ?, ?, ?, ?)`,
                 [today, sales.totalKg, sales.cashAmount, sales.mpesaAmount, total, userName], (err) => {
                     db.run("UPDATE current_day_sales SET isClosed = 1 WHERE date = ?", [today]);
-                    db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
-                        [new Date().toLocaleString(), userName, req.user.role, 'Day Closing', `Closed day with KES ${total}`]);
+                    addActivityLog(userName, req.user.role, 'Day Closing', `Closed day with KES ${total}`);
                     res.json({ message: 'Day closed' });
                 });
         });
@@ -331,6 +350,10 @@ app.post('/api/close-day', authenticateToken, (req, res) => {
 app.post('/api/new-day', authenticateToken, (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)`, [today]);
+    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+        const userName = user ? user.fullName : req.user.username;
+        addActivityLog(userName, req.user.role, 'New Day', 'Started new day');
+    });
     res.json({ message: 'New day started' });
 });
 
@@ -350,6 +373,10 @@ app.delete('/api/closings/:id', authenticateToken, (req, res) => {
         return res.status(403).json({ error: 'Permission denied' });
     }
     db.run("DELETE FROM daily_closings WHERE id = ?", [req.params.id]);
+    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+        const userName = user ? user.fullName : req.user.username;
+        addActivityLog(userName, req.user.role, 'Delete Record', 'Deleted closing record');
+    });
     res.json({ message: 'Deleted' });
 });
 
@@ -376,8 +403,7 @@ app.post('/api/expenses', authenticateToken, (req, res) => {
                 if (err) {
                     return res.status(400).json({ error: 'Failed to add expense' });
                 }
-                db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
-                    [new Date().toLocaleString(), userName, req.user.role, 'Expense Added', `${category}: KES ${amount}`]);
+                addActivityLog(userName, req.user.role, 'Expense Added', `${category}: KES ${amount}`);
                 res.json({ id: this.lastID, message: 'Expense added' });
             });
     });
@@ -389,6 +415,10 @@ app.delete('/api/expenses/:id', authenticateToken, (req, res) => {
         return res.status(403).json({ error: 'Permission denied' });
     }
     db.run("DELETE FROM expenses WHERE id = ?", [req.params.id]);
+    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+        const userName = user ? user.fullName : req.user.username;
+        addActivityLog(userName, req.user.role, 'Delete Expense', 'Deleted expense record');
+    });
     res.json({ message: 'Deleted' });
 });
 
@@ -420,6 +450,10 @@ app.post('/api/users', authenticateToken, (req, res) => {
             if (err) {
                 return res.status(400).json({ error: 'Username already exists' });
             }
+            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+                const userName = user ? user.fullName : req.user.username;
+                addActivityLog(userName, req.user.role, 'Create User', `Created user: ${username} (${fullName})`);
+            });
             res.json({ id: this.lastID, message: 'User created' });
         });
 });
@@ -450,6 +484,10 @@ app.put('/api/users/:id', authenticateToken, (req, res) => {
         params.push(req.params.id);
         
         db.run(query, params);
+        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, adminUser) => {
+            const adminName = adminUser ? adminUser.fullName : req.user.username;
+            addActivityLog(adminName, req.user.role, 'Update User', `Updated user: ${user?.username || 'Unknown'}`);
+        });
         res.json({ message: 'User updated' });
     });
 });
@@ -459,7 +497,14 @@ app.delete('/api/users/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') {
         return res.status(403).json({ error: 'Permission denied' });
     }
-    db.run("DELETE FROM users WHERE id = ? AND username NOT IN ('superadmin', 'admin1')", [req.params.id]);
+    db.get("SELECT username FROM users WHERE id = ?", [req.params.id], (err, user) => {
+        const deletedUser = user ? user.username : 'Unknown';
+        db.run("DELETE FROM users WHERE id = ? AND username NOT IN ('superadmin', 'admin1')", [req.params.id]);
+        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, adminUser) => {
+            const adminName = adminUser ? adminUser.fullName : req.user.username;
+            addActivityLog(adminName, req.user.role, 'Delete User', `Deleted user: ${deletedUser}`);
+        });
+    });
     res.json({ message: 'User deleted' });
 });
 
@@ -506,25 +551,15 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
     
     const today = new Date().toISOString().split('T')[0];
     
-    // Get user's full name for logging
     db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
         const userName = user ? user.fullName : req.user.username;
         
         db.serialize(() => {
-            // Clear daily closings
             db.run("DELETE FROM daily_closings");
-            
-            // Clear expenses
             db.run("DELETE FROM expenses");
-            
-            // Clear activity logs (but keep this reset log)
             db.run("DELETE FROM activity_logs");
-            
-            // Reset current day sales to ZERO
             db.run("DELETE FROM current_day_sales");
             db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed) VALUES (?, 0, 0, 0, 0)`, [today]);
-            
-            // Set ALL inventory stock to ZERO (keep product names, prices, but stock = 0)
             db.run("UPDATE inventory SET stockKg = 0", (err) => {
                 if (err) {
                     console.error('Error resetting inventory:', err);
@@ -532,15 +567,9 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
                     console.log('✅ Inventory stock set to 0 for all products');
                 }
             });
-            
-            // Log the reset action
-            db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
-                [new Date().toLocaleString(), userName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0, products preserved'],
-                (err) => {
-                    if (err) console.error('Error logging reset:', err);
-                    console.log('✅ All data reset to zero by:', userName);
-                    res.json({ message: 'All data has been reset to zero. Stock quantities are now 0. Products preserved.' });
-                });
+            addActivityLog(userName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0, products preserved');
+            console.log('✅ All data reset to zero by:', userName);
+            res.json({ message: 'All data has been reset to zero. Stock quantities are now 0. Products preserved.' });
         });
     });
 });
