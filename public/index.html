@@ -98,10 +98,10 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v6.3.0 🔗 Auto KG + Date Picker</div>
+<div class="version-badge" onclick="showVersionInfo()">v6.4.0 🔗 Delete Sales + Auto KG</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH AUTO KG & EXPENSE DATE PICKER ==========
+    // ========== BISMILAH BUTCHERY PRO - WITH DELETE SALES FUNCTION ==========
     
     const API_URL = '';
     let token = localStorage.getItem('token');
@@ -222,10 +222,6 @@
             const kgInput = document.getElementById('dailyKg');
             if (kgInput) {
                 kgInput.value = calculatedKg.toFixed(2);
-                kgInput.style.backgroundColor = '#d1fae5';
-                setTimeout(() => {
-                    kgInput.style.backgroundColor = '#f8fafc';
-                }, 500);
             }
         }
     };
@@ -234,6 +230,107 @@
         const kgInput = document.getElementById('dailyKg');
         if (kgInput) kgInput.value = '';
         autoCalculateKg();
+    };
+    
+    // DELETE SALE ENTRY FUNCTION
+    window.deleteSaleEntry = async (productName, kg) => {
+        if (!confirm(`Delete sale: ${kg}kg of ${productName}? This will restore stock.`)) {
+            return;
+        }
+        
+        const result = await apiCall('/api/delete-sale', 'POST', { 
+            productName, 
+            kg: parseFloat(kg)
+        });
+        
+        if (result) {
+            await loadAllData();
+            renderApp();
+            alert(`✅ Sale entry deleted! Stock restored for ${productName}.`);
+        } else {
+            alert('Failed to delete sale entry.');
+        }
+    };
+    
+    // Sales functions
+    window.updateDailySales = async () => {
+        if (currentDaySales.isClosed) return alert('Today is closed! Start a new day first.');
+        
+        const productSelect = document.getElementById('saleProduct');
+        const selectedProductId = productSelect?.value;
+        const kg = parseFloat(document.getElementById('dailyKg')?.value);
+        const cash = parseFloat(document.getElementById('dailyCash')?.value);
+        const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value);
+        
+        if (!selectedProductId || selectedProductId === '') {
+            alert('Please select a product');
+            return;
+        }
+        if (isNaN(kg) || kg <= 0) return alert('Enter valid KG');
+        if (isNaN(cash) || cash < 0) return alert('Enter valid Cash');
+        if (isNaN(mpesa) || mpesa < 0) return alert('Enter valid M-Pesa');
+        
+        const product = inventory.find(p => p.id == selectedProductId);
+        if (!product) return alert('Product not found');
+        
+        if (product.stockKg < kg) {
+            alert(`Not enough stock! Only ${product.stockKg} kg available for ${product.name}`);
+            return;
+        }
+        
+        const result = await apiCall('/api/current-sales', 'POST', { 
+            productId: selectedProductId,
+            productName: product.name,
+            kg, 
+            cash: cash || 0, 
+            mpesa: mpesa || 0 
+        });
+        
+        if (result) {
+            await loadAllData();
+            renderApp();
+            alert(`✅ Sold ${kg}kg of ${product.name}!`);
+            if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
+            if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
+            if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
+            if (document.getElementById('saleProduct')) document.getElementById('saleProduct').value = '';
+        }
+    };
+    
+    window.closeDay = async () => {
+        if (currentDaySales.isClosed) return alert('Already closed');
+        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) return alert('No sales to close');
+        const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        
+        let salesSummary = '';
+        if (currentDaySales.salesByProduct) {
+            salesSummary = '\n\nSales by Product:';
+            for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
+                const productInfo = inventory.find(p => p.name === product);
+                const revenue = kg * (productInfo?.priceKg || 0);
+                salesSummary += `\n- ${product}: ${kg} kg = KES ${revenue.toLocaleString()}`;
+            }
+        }
+        
+        if (confirm(`Close ${currentDaySales.date}?\nTotal KG: ${currentDaySales.totalKg} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${total.toLocaleString()}${salesSummary}`)) {
+            const result = await apiCall('/api/close-day', 'POST');
+            if (result) {
+                await loadAllData();
+                renderApp();
+                alert('✅ Day closed!');
+            }
+        }
+    };
+    
+    window.startNewDay = async () => {
+        const today = new Date().toISOString().split('T')[0];
+        if (!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0)) return alert('Close current day first');
+        const result = await apiCall('/api/new-day', 'POST');
+        if (result) {
+            await loadAllData();
+            renderApp();
+            alert('✅ New day started!');
+        }
     };
     
     // Expense with date picker
@@ -278,95 +375,6 @@
         loginPasswordVisible = !loginPasswordVisible;
         const input = document.getElementById('loginPasswordInput');
         if (input) input.type = loginPasswordVisible ? 'text' : 'password';
-    };
-    
-    // Sales functions
-    window.updateDailySales = async () => {
-        if (currentDaySales.isClosed) return alert('Today is closed! Start a new day first.');
-        
-        const productSelect = document.getElementById('saleProduct');
-        const selectedProductId = productSelect?.value;
-        const kg = parseFloat(document.getElementById('dailyKg')?.value);
-        const cash = parseFloat(document.getElementById('dailyCash')?.value);
-        const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value);
-        
-        if (!selectedProductId || selectedProductId === '') {
-            alert('Please select a product');
-            return;
-        }
-        if (isNaN(kg) || kg <= 0) return alert('Enter valid KG');
-        if (isNaN(cash) || cash < 0) return alert('Enter valid Cash');
-        if (isNaN(mpesa) || mpesa < 0) return alert('Enter valid M-Pesa');
-        
-        const product = inventory.find(p => p.id == selectedProductId);
-        if (!product) return alert('Product not found');
-        
-        if (product.stockKg < kg) {
-            alert(`Not enough stock! Only ${product.stockKg} kg available for ${product.name}`);
-            return;
-        }
-        
-        const expectedAmount = kg * product.priceKg;
-        const enteredAmount = cash + mpesa;
-        if (Math.abs(expectedAmount - enteredAmount) > 1) {
-            if (!confirm(`Warning: Amount entered (KES ${enteredAmount}) doesn't match the expected amount for ${kg}kg of ${product.name} (KES ${expectedAmount}).\n\nDo you want to continue anyway?`)) {
-                return;
-            }
-        }
-        
-        const result = await apiCall('/api/current-sales', 'POST', { 
-            productId: selectedProductId,
-            productName: product.name,
-            kg, 
-            cash: cash || 0, 
-            mpesa: mpesa || 0 
-        });
-        
-        if (result) {
-            await loadAllData();
-            renderApp();
-            alert(`✅ Sold ${kg}kg of ${product.name} for KES ${(kg * product.priceKg).toLocaleString()}!`);
-            if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
-            if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
-            if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
-            if (document.getElementById('saleProduct')) document.getElementById('saleProduct').value = '';
-        }
-    };
-    
-    window.closeDay = async () => {
-        if (currentDaySales.isClosed) return alert('Already closed');
-        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) return alert('No sales to close');
-        const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
-        
-        let salesSummary = '';
-        if (currentDaySales.salesByProduct) {
-            salesSummary = '\n\nSales by Product:';
-            for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
-                const productInfo = inventory.find(p => p.name === product);
-                const revenue = kg * (productInfo?.priceKg || 0);
-                salesSummary += `\n- ${product}: ${kg} kg = KES ${revenue.toLocaleString()}`;
-            }
-        }
-        
-        if (confirm(`Close ${currentDaySales.date}?\nTotal KG: ${currentDaySales.totalKg} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${total.toLocaleString()}${salesSummary}`)) {
-            const result = await apiCall('/api/close-day', 'POST');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Day closed!');
-            }
-        }
-    };
-    
-    window.startNewDay = async () => {
-        const today = new Date().toISOString().split('T')[0];
-        if (!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0)) return alert('Close current day first');
-        const result = await apiCall('/api/new-day', 'POST');
-        if (result) {
-            await loadAllData();
-            renderApp();
-            alert('✅ New day started!');
-        }
     };
     
     // Reset function
@@ -714,7 +722,6 @@
         }
     };
     
-    // Expense delete
     window.deleteExpense = async (expenseId) => {
         if (!canDelete()) return alert('Only Super Admin can delete expenses');
         const expense = expenses.find(e => e.id === expenseId);
@@ -837,7 +844,7 @@
     window.changeReport = (value) => { selectedReport = value; renderApp(); };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 6.3.0 (Auto KG Calculator + Expense Date Picker)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 6.4.0 (Delete Sales + Auto KG)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     function renderDashboard() {
@@ -871,12 +878,11 @@
         
         return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records (${dailyClosings.length} days)</option></select></div>
         <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div></div>
-        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
+        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</td></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
     }
     
     function renderSales() {
-        const productOptions = inventory.map(p => `<option value="${p.id}">${p.name} (${p.stockKg} kg available) - KES ${p.priceKg}/kg</option>`).join('');
-        const today = new Date().toISOString().split('T')[0];
+        const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${p.stockKg} kg available) - KES ${p.priceKg}/kg</option>`).join('');
         
         return `<div class="sales-panel"><div class="sales-card"><h3>📦 Total KG Today</h3><div class="amount">${currentDaySales.totalKg} kg</div></div><div class="sales-card"><h3>💰 Cash Today</h3><div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div></div><div class="sales-card"><h3>📱 M-Pesa Today</h3><div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div></div></div>
         
@@ -914,15 +920,22 @@
             <div class="card-header"><h2>📊 Today's Sales by Product</h2></div>
             <div class="table-container">
                 <table class="data-table">
-                    <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Revenue (KES)</th></tr></thead>
+                    <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Revenue (KES)</th><th>Action</th></tr></thead>
                     <tbody>
                         ${Object.entries(currentDaySales.salesByProduct).map(([product, kg]) => {
                             const productInfo = inventory.find(p => p.name === product);
-                            const revenue = kg * (productInfo?.priceKg || 0);
-                            return `<tr><td style="padding:8px">${product}</td><td style="padding:8px">${kg} kg</td><td style="padding:8px">KES ${revenue.toLocaleString()}</td></tr>`;
+                            const pricePerKg = productInfo?.priceKg || 0;
+                            const revenue = kg * pricePerKg;
+                            return `<tr>
+                                <td style="padding:8px">${product}</td>
+                                <td style="padding:8px">${parseFloat(kg).toFixed(2)} kg</td>
+                                <td style="padding:8px">KES ${revenue.toLocaleString()} (${pricePerKg}/kg)</td>
+                                <td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td>
+                            </tr>`;
                         }).join('')}
                     </tbody>
                 </table>
+                <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
         </div>
         ` : ''}
@@ -1007,7 +1020,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}<td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<td><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
     }
     
     // Initialize
