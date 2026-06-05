@@ -1,0 +1,187 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "superadmin",
+      "password": "admin123",
+      "role": "super_admin",
+      "fullName": "Super Admin",
+      "email": "super@butchery.com",
+      "phone": "0712345678",
+      "isActive": true,
+      "createdAt": "",
+      "lastLogin": "5/31/2026, 10:47:26 AM",
+      "permissions": [
+        "all"
+      ]
+    },
+    {
+      "id": 2,
+      "username": "admin1",
+      "password": "admin123",
+      "role": "admin",
+      "fullName": "John Admin",
+      "email": "john@butchery.com",
+      "phone": "0723456789",
+      "isActive": true,
+      "createdAt": "",
+      "lastLogin": "5/31/2026, 9:38:44 AM",
+      "permissions": [
+        "sales",
+        "inventory_view",
+        "reports_view"
+      ]
+    }
+  ],
+  "inventory": [
+    {
+      "id": 1,
+      "name": "Cow Sirloin",
+      "animal": "Cow",
+      "stockKg": 45.5,
+      "priceKg": 850,
+      "costKg": 560,
+      "lowStockAlert": 10
+    },
+    {
+      "id": 2,
+      "name": "Goat Leg",
+      "animal": "Goat",
+      "stockKg": 22.3,
+      "priceKg": 950,
+      "costKg": 640,
+      "lowStockAlert": 8
+    },
+    {
+      "id": 3,
+      "name": "Chicken Whole",
+      "animal": "Chicken",
+      "stockKg": 35,
+      "priceKg": 550,
+      "costKg": 370,
+      "lowStockAlert": 12
+    },
+    {
+      "id": 4,
+      "name": "Fresh Liver",
+      "animal": "Liver",
+      "stockKg": 12.8,
+      "priceKg": 450,
+      "costKg": 300,
+      "lowStockAlert": 5
+    },
+    {
+      "id": 5,
+      "name": "Matumbo (Tripe)",
+      "animal": "Cow",
+      "stockKg": 18.5,
+      "priceKg": 380,
+      "costKg": 250,
+      "lowStockAlert": 6
+    }
+  ],
+  "dailyClosings": [
+    {
+      "id": 1,
+      "date": "2026-05-31",
+      "totalKg": 2.448,
+      "cashAmount": 3775,
+      "mpesaAmount": 1090,
+      "totalRevenue": 4865,
+      "closedBy": "John Admin"
+    }
+  ],
+  "currentDaySales": {
+    "date": "2026-05-31",
+    "totalKg": 2.448,
+    "cashAmount": 3775,
+    "mpesaAmount": 1090,
+    "isClosed": true
+  },
+  "expenses": [],
+  "activityLogs": [
+    {
+      "id": 1780213646193,
+      "timestamp": "5/31/2026, 10:47:26 AM",
+      "user": "superadmin",
+      "action": "Login",
+      "details": "Super Admin (super_admin) logged in"
+    },
+    {
+      "id": 1780212377504,
+      "timestamp": "5/31/2026, 10:26:17 AM",
+      "user": "superadmin",
+      "action": "Login",
+      "details": "Super Admin (super_admin) logged in"
+    },
+    {
+      "id": 1780212367294,
+      "timestamp": "5/31/2026, 10:26:07 AM",
+      "user": "superadmin",
+      "action": "Logout",
+      "details": "Super Admin logged out"
+    },
+    {
+      "id": 1780212300765,
+      "timestamp": "5/31/2026, 10:25:00 AM",
+      "user": "superadmin",
+      "action": "Login",
+      "details": "Super Admin (super_admin) logged in"
+    },
+    {
+      "id": 1780209843526,
+      "timestamp": "5/31/2026, 9:44:03 AM",
+      "user": "superadmin",
+      "action": "Login",
+      "details": "Super Admin (super_admin) logged in"
+    },
+    {
+      "id": 1780209804565,
+      "timestamp": "5/31/2026, 9:43:24 AM",
+      "user": "admin1",
+      "action": "Day Closing",
+      "details": "admin1 closed day"
+    },
+    {
+      "id": 1780209797446,
+      "timestamp": "5/31/2026, 9:43:17 AM",
+      "user": "admin1",
+      "action": "Sales Update",
+      "details": "admin1 added 2.448kg"
+    },
+    {
+      "id": 1780209524731,
+      "timestamp": "5/31/2026, 9:38:44 AM",
+      "user": "admin1",
+      "action": "Login",
+      "details": "John Admin (admin) logged in"
+    },
+    {
+      "id": 1780209495250,
+      "timestamp": "5/31/2026, 9:38:15 AM",
+      "user": "superadmin",
+      "action": "Login",
+      "details": "Super Admin (super_admin) logged in"
+    },
+    {
+      "id": 1780208239858,
+      "timestamp": "5/31/2026, 9:17:19 AM",
+      "user": "admin1",
+      "action": "Login",
+      "details": "John Admin (admin) logged in"
+    },
+    {
+      "id": 1780207958983,
+      "timestamp": "5/31/2026, 9:12:38 AM",
+      "user": "superadmin",
+      "action": "Login",
+      "details": "Super Admin (super_admin) logged in"
+    }
+  ],
+  "nextId": {
+    "inventory": 6,
+    "expenses": 1,
+    "users": 3,
+    "closings": 2
+  }
+}

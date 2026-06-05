@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Bismillah Butchery Pro | Fresh Meat Always</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            min-height: 100vh;
+        }
+        .app-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px 24px;
+        }
+        
+        .password-wrapper {
+            position: relative;
+            width: 100%;
+        }
+        .password-wrapper input {
+            width: 100%;
+            padding: 12px 45px 12px 16px;
+            border-radius: 12px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            color: #1e293b;
+            font-size: 0.9rem;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 8px;
+        }
+        .password-toggle:hover { color: #3b82f6; }
+        
+        .dashboard-layout {
+            display: flex;
+            gap: 24px;
+            min-height: 85vh;
+        }
+        .sidebar {
+            width: 280px;
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 24px 16px;
+            border: 1px solid #e2e8f0;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+        .logo-area {
+            text-align: center;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .logo-area h1 { font-size: 1.4rem; color: #1e293b; }
+        .logo-area h1 i { color: #3b82f6; margin-right: 8px; }
+        .logo-area p { font-size: 0.7rem; color: #64748b; }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            margin: 4px 0;
+            border-radius: 12px;
+            cursor: pointer;
+            color: #475569;
+            font-size: 0.9rem;
+        }
+        .nav-item:hover { background: #f1f5f9; color: #3b82f6; }
+        .nav-item.active { background: #eff6ff; color: #3b82f6; font-weight: 500; }
+        .main-content { flex: 1; }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding: 16px 24px;
+            background: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .user-info { display: flex; align-items: center; gap: 15px; }
+        .role-badge {
+            background: #f1f5f9;
+            color: #475569;
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+        .stat-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+        }
+        .stat-card:hover { transform: translateY(-2px); border-color: #cbd5e1; }
+        .stat-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #64748b; }
+        .stat-value { font-size: 1.8rem; font-weight: 700; margin-top: 8px; color: #1e293b; }
+        
+        .card {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid #e2e8f0;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e2e8f0;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .card-header h2 { font-size: 1.1rem; font-weight: 600; color: #1e293b; }
+        
+        .btn {
+            background: #3b82f6;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .btn:hover { background: #2563eb; }
+        .btn-success { background: #10b981; }
+        .btn-success:hover { background: #059669; }
+        .btn-warning { background: #f59e0b; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-delete {
+            background: #94a3b8;
+            padding: 6px 12px;
+            font-size: 0.7rem;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-delete:hover { background: #64748b; }
+        .btn-edit {
+            background: #3b82f6;
+            padding: 6px 12px;
+            font-size: 0.7rem;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-edit:hover { background: #2563eb; }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            color: #1e293b;
+            font-size: 0.9rem;
+        }
+        input:focus, select:focus { outline: none; border-color: #3b82f6; }
+        .form-group { margin-bottom: 16px; }
+        label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: #64748b; display: block; margin-bottom: 6px; }
+        
+        .table-container {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .data-table th {
+            background: #f8fafc;
+            padding: 14px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+        }
+        .data-table tr:hover { background: #f8fafc; }
+        
+        .progress-section {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+        .stock-item {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .stock-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .stock-name { font-weight: 600; color: #1e293b; }
+        .stock-quantity { font-size: 0.8rem; color: #64748b; }
+        .progress-bar {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 10px;
+            height: 100%;
+            transition: width 0.3s;
+        }
+        .progress-fill.low { background: linear-gradient(90deg, #ef4444, #f97316); }
+        .progress-fill.medium { background: linear-gradient(90deg, #f59e0b, #eab308); }
+        
+        .login-container {
+            max-width: 450px;
+            margin: 60px auto;
+            padding: 40px;
+            background: #ffffff;
+            border-radius: 24px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        .modal-content {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 28px;
+            width: 100%;
+            max-width: 500px;
+            border: 1px solid #e2e8f0;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 16px;
+        }
+        .close-modal {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.3rem;
+            cursor: pointer;
+        }
+        .close-modal:hover { color: #ef4444; }
+        
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-card {
+            background: #f8fafc;
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+        }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .summary-row.total {
+            border-bottom: none;
+            margin-top: 10px;
+            padding-top: 15px;
+            font-weight: 700;
+            color: #10b981;
+        }
+        
+        .role-badge-super {
+            background: #8b5cf6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .role-badge-admin {
+            background: #3b82f6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+        .password-cell { display: flex; align-items: center; gap: 6px; }
+        .eye-btn, .copy-btn {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 0.8rem;
+            padding: 4px;
+        }
+        .eye-btn:hover, .copy-btn:hover { color: #3b82f6; }
+        
+        .create-account-btn {
+            background: none;
+            border: none;
+            color: #3b82f6;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            text-decoration: underline;
+        }
+        .create-account-btn:hover { color: #2563eb; }
+        
+        @media (max-width: 1024px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .form-grid { grid-template-columns: 1fr; }
+            .progress-section { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 768px) {
+            .dashboard-layout { flex-direction: column; }
+            .sidebar { width: 100%; position: relative; }
+            .stats-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    // ========== BUTCHERY MANAGEMENT SYSTEM ==========
+    
+    // Initialize default users - SUPER ADMIN IS ALWAYS PRESERVED
+    let defaultUsers = [
+        { id: 1, username: 'superadmin', password: 'admin123', role: 'super_admin', fullName: 'Super Admin', email: 'super@butchery.com', phone: '0712345678', isActive: true, createdAt: new Date().toISOString(), lastLogin: null, permissions: ['all'] },
+        { id: 2, username: 'admin1', password: 'admin123', role: 'admin', fullName: 'John Admin', email: 'john@butchery.com', phone: '0723456789', isActive: true, createdAt: new Date().toISOString(), lastLogin: null, permissions: ['sales', 'inventory_view', 'reports_view'] }
+    ];
+    
+    let users = [];
+    let currentUser = null;
+    let currentPage = 'dashboard';
+    let visiblePasswords = {};
+    let loginPasswordVisible = false;
+    let showCreateAccount = false;
+    
+    let dailyClosings = [
+        { id: 1, date: '2026-05-27', totalKg: 6.1, cashAmount: 4010, mpesaAmount: 950, totalRevenue: 4960, closedBy: 'John Admin' },
+        { id: 2, date: '2026-05-28', totalKg: 8.5, cashAmount: 5500, mpesaAmount: 1200, totalRevenue: 6700, closedBy: 'Super Admin' }
+    ];
+    let currentDaySales = {
+        date: new Date().toISOString().split('T')[0],
+        totalKg: 0,
+        cashAmount: 0,
+        mpesaAmount: 0,
+        isClosed: false
+    };
+    
+    let inventory = [
+        { id: 1, name: 'Cow Sirloin', animal: 'Cow', stockKg: 45.5, priceKg: 850, costKg: 560, lowStockAlert: 10 },
+        { id: 2, name: 'Goat Leg', animal: 'Goat', stockKg: 22.3, priceKg: 950, costKg: 640, lowStockAlert: 8 },
+        { id: 3, name: 'Chicken Whole', animal: 'Chicken', stockKg: 35.0, priceKg: 550, costKg: 370, lowStockAlert: 12 },
+        { id: 4, name: 'Fresh Liver', animal: 'Liver', stockKg: 12.8, priceKg: 450, costKg: 300, lowStockAlert: 5 },
+        { id: 5, name: 'Matumbo (Tripe)', animal: 'Cow', stockKg: 18.5, priceKg: 380, costKg: 250, lowStockAlert: 6 }
+    ];
+    
+    let expenses = [];
+    let activityLogs = [];
+    let nextId = { inventory: 6, expenses: 1, users: 3, closings: 3 };
+    let editingProduct = null;
+    let editingExpense = null;
+    
+    function initializeUsers() {
+        const savedUsers = localStorage.getItem('butchery_users');
+        if (savedUsers) {
+            users = JSON.parse(savedUsers);
+            // Make sure superadmin always exists and is active
+            const superAdminExists = users.find(u => u.username === 'superadmin');
+            if (!superAdminExists) {
+                users.unshift(defaultUsers[0]);
+            } else {
+                // Ensure superadmin has correct password and is active
+                const superAdmin = users.find(u => u.username === 'superadmin');
+                superAdmin.password = 'admin123';
+                superAdmin.isActive = true;
+                superAdmin.role = 'super_admin';
+                superAdmin.permissions = ['all'];
+            }
+            // Make sure admin1 exists
+            const adminExists = users.find(u => u.username === 'admin1');
+            if (!adminExists) {
+                users.push(defaultUsers[1]);
+            }
+        } else {
+            users = [...defaultUsers];
+        }
+        saveUsers();
+    }
+    
+    function saveUsers() {
+        localStorage.setItem('butchery_users', JSON.stringify(users));
+    }
+    
+    function saveSession() {
+        if (currentUser) {
+            sessionStorage.setItem('butchery_currentUser', JSON.stringify({
+                id: currentUser.id,
+                username: currentUser.username,
+                role: currentUser.role,
+                fullName: currentUser.fullName,
+                permissions: currentUser.permissions
+            }));
+            sessionStorage.setItem('butchery_currentPage', currentPage);
+        }
+    }
+    
+    function loadSession() {
+        const savedUser = sessionStorage.getItem('butchery_currentUser');
+        const savedPage = sessionStorage.getItem('butchery_currentPage');
+        if (savedUser) {
+            const userData = JSON.parse(savedUser);
+            const fullUser = users.find(u => u.id === userData.id);
+            if (fullUser && fullUser.isActive) {
+                currentUser = fullUser;
+                currentPage = savedPage || 'dashboard';
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    function clearSession() {
+        sessionStorage.removeItem('butchery_currentUser');
+        sessionStorage.removeItem('butchery_currentPage');
+    }
+    
+    function addLog(action, details) {
+        activityLogs.unshift({ id: Date.now(), timestamp: new Date().toLocaleString(), user: currentUser?.fullName || currentUser?.username || 'system', userRole: currentUser?.role || 'system', action, details });
+        if (activityLogs.length > 200) activityLogs.pop();
+        saveAllData();
+    }
+    
+    function saveAllData() {
+        localStorage.setItem('butchery_inventory', JSON.stringify(inventory));
+        localStorage.setItem('butchery_dailyClosings', JSON.stringify(dailyClosings));
+        localStorage.setItem('butchery_currentDaySales', JSON.stringify(currentDaySales));
+        localStorage.setItem('butchery_expenses', JSON.stringify(expenses));
+        localStorage.setItem('butchery_logs', JSON.stringify(activityLogs));
+        localStorage.setItem('butchery_nextId', JSON.stringify(nextId));
+        saveUsers();
+    }
+    
+    function loadAllData() {
+        const savedInv = localStorage.getItem('butchery_inventory');
+        const savedClosings = localStorage.getItem('butchery_dailyClosings');
+        const savedCurrent = localStorage.getItem('butchery_currentDaySales');
+        const savedExp = localStorage.getItem('butchery_expenses');
+        const savedLogs = localStorage.getItem('butchery_logs');
+        const savedNext = localStorage.getItem('butchery_nextId');
+        
+        if (savedInv) inventory = JSON.parse(savedInv);
+        if (savedClosings) dailyClosings = JSON.parse(savedClosings);
+        if (savedCurrent) {
+            const loaded = JSON.parse(savedCurrent);
+            const today = new Date().toISOString().split('T')[0];
+            if (loaded.date === today && !loaded.isClosed) currentDaySales = loaded;
+            else currentDaySales = { date: today, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false };
+        }
+        if (savedExp) expenses = JSON.parse(savedExp);
+        if (savedLogs) activityLogs = JSON.parse(savedLogs);
+        if (savedNext) nextId = JSON.parse(savedNext);
+        
+        const today = new Date().toISOString().split('T')[0];
+        if (currentDaySales.date !== today && !currentDaySales.isClosed) {
+            currentDaySales = { date: today, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false };
+            saveAllData();
+        }
+    }
+    
+    function login(username, password) {
+        const user = users.find(u => u.username === username && u.password === password && u.isActive);
+        
+        if (user) {
+            currentUser = user;
+            user.lastLogin = new Date().toLocaleString();
+            addLog('Login', `${user.fullName} (${user.role}) logged in`);
+            saveAllData();
+            saveSession();
+            renderApp();
+            return true;
+        }
+        alert('Invalid credentials!\n\nSuper Admin: superadmin / admin123\nAdmin: admin1 / admin123');
+        return false;
+    }
+    
+    function createAccount(fullName, username, password, email, phone) {
+        if (users.find(u => u.username === username)) {
+            alert('Username already exists!');
+            return false;
+        }
+        
+        if (username === 'superadmin') {
+            alert('You cannot create a superadmin account');
+            return false;
+        }
+        
+        const newUser = {
+            id: nextId.users++,
+            username: username,
+            password: password,
+            role: 'admin',
+            fullName: fullName,
+            email: email || '',
+            phone: phone || '',
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            lastLogin: null,
+            permissions: ['sales', 'inventory_view', 'reports_view']
+        };
+        users.push(newUser);
+        saveUsers();
+        addLog('Account Created', `New user account created: ${username} (${fullName})`);
+        alert(`✅ Account created successfully!\n\nUsername: ${username}\nPassword: ${password}\n\nYou can now login with your credentials.`);
+        return true;
+    }
+    
+    function logout() {
+        addLog('Logout', `${currentUser?.fullName} logged out`);
+        currentUser = null;
+        clearSession();
+        renderApp();
+    }
+    
+    function hasPermission(permission) {
+        if (!currentUser) return false;
+        if (currentUser.role === 'super_admin') return true;
+        return currentUser.permissions.includes(permission);
+    }
+    
+    window.togglePasswordVisibility = (userId) => {
+        visiblePasswords[userId] = !visiblePasswords[userId];
+        renderApp();
+    };
+    
+    window.toggleLoginPassword = () => {
+        loginPasswordVisible = !loginPasswordVisible;
+        const passwordInput = document.getElementById('loginPasswordInput');
+        if (passwordInput) passwordInput.type = loginPasswordVisible ? 'text' : 'password';
+        const eyeIcon = document.getElementById('loginEyeIcon');
+        if (eyeIcon) eyeIcon.className = loginPasswordVisible ? 'fas fa-eye-slash' : 'fas fa-eye';
+    };
+    
+    window.copyPassword = (username, password) => {
+        navigator.clipboard.writeText(password);
+        alert(`✅ Password for "${username}": ${password}\nCopied!`);
+    };
+    
+    window.showCreateAccountForm = () => {
+        showCreateAccount = true;
+        renderApp();
+    };
+    
+    window.hideCreateAccountForm = () => {
+        showCreateAccount = false;
+        renderApp();
+    };
+    
+    window.submitCreateAccount = () => {
+        const fullName = document.getElementById('createFullName')?.value;
+        const username = document.getElementById('createUsername')?.value;
+        const password = document.getElementById('createPassword')?.value;
+        const confirmPassword = document.getElementById('createConfirmPassword')?.value;
+        const email = document.getElementById('createEmail')?.value;
+        const phone = document.getElementById('createPhone')?.value;
+        
+        if (!fullName || !username || !password) {
+            alert('Please fill all required fields');
+            return;
+        }
+        
+        if (password !== confirmPassword) {
+            alert('Passwords do not match!');
+            return;
+        }
+        
+        if (password.length < 4) {
+            alert('Password must be at least 4 characters');
+            return;
+        }
+        
+        if (createAccount(fullName, username, password, email, phone)) {
+            showCreateAccount = false;
+            renderApp();
+        }
+    };
+    
+    window.updateDailySales = () => {
+        if (currentDaySales.isClosed) return alert('Today is closed!');
+        const kg = parseFloat(document.getElementById('dailyKg')?.value);
+        const cash = parseFloat(document.getElementById('dailyCash')?.value);
+        const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value);
+        if (isNaN(kg) || kg <= 0) return alert('Enter valid KG');
+        if (isNaN(cash) || cash < 0) return alert('Enter valid Cash');
+        if (isNaN(mpesa) || mpesa < 0) return alert('Enter valid M-Pesa');
+        currentDaySales.totalKg += kg;
+        currentDaySales.cashAmount += cash;
+        currentDaySales.mpesaAmount += mpesa;
+        addLog('Sales Update', `${currentUser?.fullName} added ${kg}kg`);
+        saveAllData();
+        renderApp();
+        alert('✅ Sales updated!');
+        document.getElementById('dailyKg').value = '';
+        document.getElementById('dailyCash').value = '';
+        document.getElementById('dailyMpesa').value = '';
+    };
+    
+    window.closeDay = () => {
+        if (currentDaySales.isClosed) return alert('Already closed');
+        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) {
+            return alert('No sales recorded');
+        }
+        const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        if (confirm(`Close day ${currentDaySales.date}?\nKG: ${currentDaySales.totalKg} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal: KES ${total.toLocaleString()}`)) {
+            dailyClosings.unshift({
+                id: nextId.closings++,
+                date: currentDaySales.date,
+                totalKg: currentDaySales.totalKg,
+                cashAmount: currentDaySales.cashAmount,
+                mpesaAmount: currentDaySales.mpesaAmount,
+                totalRevenue: total,
+                closedBy: currentUser?.fullName
+            });
+            currentDaySales.isClosed = true;
+            addLog('Day Closing', `${currentUser?.fullName} closed day`);
+            saveAllData();
+            alert('✅ Day closed!');
+            renderApp();
+        }
+    };
+    
+    window.startNewDay = () => {
+        const today = new Date().toISOString().split('T')[0];
+        if (!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0)) {
+            return alert('Close current day first');
+        }
+        currentDaySales = { date: today, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false };
+        saveAllData();
+        addLog('New Day', `${currentUser?.fullName} started new day`);
+        renderApp();
+        alert('✅ New day started');
+    };
+    
+    window.deleteClosingRecord = (recordId) => {
+        if (currentUser?.role !== 'super_admin') return alert('Only Super Admin can delete');
+        const record = dailyClosings.find(r => r.id === recordId);
+        if (!record) return;
+        if (confirm(`Delete record for ${record.date}?`)) {
+            dailyClosings = dailyClosings.filter(r => r.id !== recordId);
+            addLog('Delete Record', `${currentUser?.fullName} deleted record`);
+            saveAllData();
+            renderApp();
+            alert('✅ Record deleted!');
+        }
+    };
+    
+    window.deleteInventoryProduct = (productId) => {
+        if (currentUser?.role !== 'super_admin') return alert('Only Super Admin can delete');
+        const product = inventory.find(p => p.id === productId);
+        if (!product) return;
+        if (confirm(`Delete "${product.name}"?`)) {
+            inventory = inventory.filter(p => p.id !== productId);
+            addLog('Delete Product', `${currentUser?.fullName} deleted ${product.name}`);
+            saveAllData();
+            renderApp();
+            alert(`✅ "${product.name}" deleted!`);
+        }
+    };
+    
+    window.deleteExpense = (expenseId) => {
+        if (currentUser?.role !== 'super_admin') return alert('Only Super Admin can delete');
+        const expense = expenses.find(e => e.id === expenseId);
+        if (!expense) return;
+        if (confirm(`Delete expense: ${expense.category}?`)) {
+            expenses = expenses.filter(e => e.id !== expenseId);
+            addLog('Delete Expense', `${currentUser?.fullName} deleted ${expense.category}`);
+            saveAllData();
+            renderApp();
+            alert('✅ Expense deleted!');
+        }
+    };
+    
+    window.openFullEditModal = (productId) => {
+        if (currentUser?.role !== 'super_admin') return alert('Only Super Admin can edit');
+        const product = inventory.find(p => p.id === productId);
+        if (!product) return;
+        editingProduct = { ...product };
+        const modalHtml = `
+            <div class="modal" id="editModal">
+                <div class="modal-content">
+                    <div class="modal-header"><h3>Edit Product: ${product.name}</h3><button class="close-modal" onclick="closeEditModal()">&times;</button></div>
+                    <div class="form-group"><label>Product Name</label><input type="text" id="editName" value="${product.name}"></div>
+                    <div class="form-group"><label>Animal Type</label><select id="editAnimal"><option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option><option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option><option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option><option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option></select></div>
+                    <div class="form-group"><label>Stock (kg)</label><input type="number" id="editStock" step="0.1" value="${product.stockKg}"></div>
+                    <div class="form-group"><label>Selling Price</label><input type="number" id="editPrice" step="10" value="${product.priceKg}"></div>
+                    <div class="form-group"><label>Cost Price</label><input type="number" id="editCost" step="10" value="${product.costKg}"></div>
+                    <div class="form-group"><label>Low Stock Alert</label><input type="number" id="editAlert" step="1" value="${product.lowStockAlert}"></div>
+                    <div style="display:flex; gap:12px; margin-top:20px;">
+                        <button class="btn btn-success" onclick="saveFullEdit()" style="flex:1;">Save</button>
+                        <button class="btn-delete" onclick="closeEditModal()" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        const existing = document.getElementById('editModal');
+        if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    
+    window.closeEditModal = () => { const m = document.getElementById('editModal'); if (m) m.remove(); editingProduct = null; };
+    
+    window.saveFullEdit = () => {
+        if (!editingProduct) return;
+        const product = inventory.find(p => p.id === editingProduct.id);
+        if (product) {
+            product.name = document.getElementById('editName')?.value;
+            product.animal = document.getElementById('editAnimal')?.value;
+            product.stockKg = parseFloat(document.getElementById('editStock')?.value);
+            product.priceKg = parseFloat(document.getElementById('editPrice')?.value);
+            product.costKg = parseFloat(document.getElementById('editCost')?.value);
+            product.lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
+            addLog('Inventory Edit', `${currentUser?.fullName} edited ${product.name}`);
+            saveAllData();
+            closeEditModal();
+            renderApp();
+            alert('✅ Product updated!');
+        }
+    };
+    
+    window.openAddStockModal = () => {
+        if (currentUser?.role !== 'super_admin') return alert('Only Super Admin can add');
+        const name = prompt('Product name:');
+        const animal = prompt('Animal (Cow/Goat/Chicken/Liver):');
+        const stock = parseFloat(prompt('Stock kg:'));
+        const price = parseFloat(prompt('Price per kg:'));
+        const cost = parseFloat(prompt('Cost per kg:'));
+        if (name && animal && stock && price) {
+            inventory.push({ id: nextId.inventory++, name, animal, stockKg: stock, priceKg: price, costKg: cost || price * 0.7, lowStockAlert: 10 });
+            addLog('Inventory', `${currentUser?.fullName} added ${name}`);
+            saveAllData();
+            renderApp();
+            alert(`✅ "${name}" added!`);
+        }
+    };
+    
+    window.addExpense = () => {
+        const category = document.getElementById('expCategory')?.value;
+        const amount = parseFloat(document.getElementById('expAmount')?.value);
+        const description = document.getElementById('expDesc')?.value;
+        if (!category || isNaN(amount) || amount <= 0) return alert('Enter valid expense');
+        expenses.push({ id: nextId.expenses++, date: new Date().toISOString().split('T')[0], category, amount, description });
+        addLog('Expense', `${currentUser?.fullName} added ${category} - KES ${amount}`);
+        saveAllData();
+        renderApp();
+        document.getElementById('expCategory').value = '';
+        document.getElementById('expAmount').value = '';
+        document.getElementById('expDesc').value = '';
+        alert('✅ Expense added!');
+    };
+    
+    window.openEditExpenseModal = (expenseId) => {
+        if (currentUser?.role !== 'super_admin') return alert('Only Super Admin can edit');
+        const expense = expenses.find(e => e.id === expenseId);
+        if (!expense) return;
+        editingExpense = { ...expense };
+        const modalHtml = `
+            <div class="modal" id="editExpenseModal">
+                <div class="modal-content">
+                    <div class="modal-header"><h3>Edit Expense</h3><button class="close-modal" onclick="closeEditExpenseModal()">&times;</button></div>
+                    <div class="form-group"><label>Category</label><input type="text" id="editExpCategory" value="${expense.category}"></div>
+                    <div class="form-group"><label>Amount (KES)</label><input type="number" id="editExpAmount" value="${expense.amount}"></div>
+                    <div class="form-group"><label>Description</label><textarea id="editExpDesc">${expense.description || ''}</textarea></div>
+                    <div style="display:flex; gap:12px; margin-top:20px;">
+                        <button class="btn btn-success" onclick="saveExpenseEdit()" style="flex:1;">Save</button>
+                        <button class="btn-delete" onclick="closeEditExpenseModal()" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        const existing = document.getElementById('editExpenseModal');
+        if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    
+    window.closeEditExpenseModal = () => { const m = document.getElementById('editExpenseModal'); if (m) m.remove(); editingExpense = null; };
+    
+    window.saveExpenseEdit = () => {
+        if (!editingExpense) return;
+        const expense = expenses.find(e => e.id === editingExpense.id);
+        if (expense) {
+            expense.category = document.getElementById('editExpCategory')?.value;
+            expense.amount = parseFloat(document.getElementById('editExpAmount')?.value);
+            expense.description = document.getElementById('editExpDesc')?.value;
+            addLog('Expense Edit', `${currentUser?.fullName} edited expense ${expense.category}`);
+            saveAllData();
+            closeEditExpenseModal();
+            renderApp();
+            alert('✅ Expense updated!');
+        }
+    };
+    
+    function renderLogin() {
+        return `
+            <div class="login-container">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <i class="fas fa-drumstick-bite" style="font-size: 3rem; color: #3b82f6;"></i>
+                    <h1 style="margin-top: 15px; color: #1e293b;">Bismillah Butchery Pro</h1>
+                    <p style="color: #64748b; margin-top: 5px;">Fresh Meat Always</p>
+                </div>
+                <form onsubmit="event.preventDefault(); login(document.getElementById('loginUsername').value, document.getElementById('loginPasswordInput').value)">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="loginUsername" placeholder="Enter username" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="loginPasswordInput" placeholder="Enter password" required>
+                            <button type="button" class="password-toggle" onclick="toggleLoginPassword()">
+                                <i id="loginEyeIcon" class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Login</button>
+                </form>
+                <button class="create-account-btn" onclick="showCreateAccountForm()">+ Create New Account</button>
+                ${showCreateAccount ? renderCreateAccountForm() : ''}
+            </div>
+        `;
+    }
+    
+    function renderCreateAccountForm() {
+        return `
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                <h3 style="margin-bottom: 15px;">Create New Account</h3>
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="createFullName" placeholder="Enter full name">
+                </div>
+                <div class="form-group">
+                    <label>Username *</label>
+                    <input type="text" id="createUsername" placeholder="Choose username">
+                </div>
+                <div class="form-group">
+                    <label>Password *</label>
+                    <input type="password" id="createPassword" placeholder="Choose password (min 4 chars)">
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password *</label>
+                    <input type="password" id="createConfirmPassword" placeholder="Confirm password">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="createEmail" placeholder="Email (optional)">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="tel" id="createPhone" placeholder="Phone (optional)">
+                </div>
+                <button class="btn btn-success" onclick="submitCreateAccount()" style="width: 100%;">Create Account</button>
+                <button class="btn-delete" onclick="hideCreateAccountForm()" style="width: 100%; margin-top: 10px;">Cancel</button>
+            </div>
+        `;
+    }
+    
+    function renderDashboard() {
+        const totalInventory = inventory.reduce((sum, item) => sum + item.stockKg, 0);
+        const totalValue = inventory.reduce((sum, item) => sum + (item.stockKg * item.priceKg), 0);
+        const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+        const todayRevenue = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        
+        return `
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-title"><i class="fas fa-box"></i> Total Stock</div><div class="stat-value">${totalInventory.toFixed(1)} kg</div></div>
+                <div class="stat-card"><div class="stat-title"><i class="fas fa-chart-line"></i> Inventory Value</div><div class="stat-value">KES ${totalValue.toLocaleString()}</div></div>
+                <div class="stat-card"><div class="stat-title"><i class="fas fa-shopping-cart"></i> Today's Sales</div><div class="stat-value">${currentDaySales.totalKg.toFixed(1)} kg</div></div>
+                <div class="stat-card"><div class="stat-title"><i class="fas fa-money-bill"></i> Today's Revenue</div><div class="stat-value">KES ${todayRevenue.toLocaleString()}</div></div>
+                <div class="stat-card"><div class="stat-title"><i class="fas fa-receipt"></i> Total Expenses</div><div class="stat-value">KES ${totalExpenses.toLocaleString()}</div></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-chart-line"></i> Quick Sales Entry</h2></div>
+                <div class="form-grid">
+                    <div class="form-group"><label>KG Sold</label><input type="number" id="dailyKg" step="0.1" placeholder="0.0"></div>
+                    <div class="form-group"><label>Cash Amount</label><input type="number" id="dailyCash" step="10" placeholder="KES"></div>
+                    <div class="form-group"><label>M-Pesa Amount</label><input type="number" id="dailyMpesa" step="10" placeholder="KES"></div>
+                </div>
+                <button class="btn btn-success" onclick="updateDailySales()"><i class="fas fa-plus"></i> Add Sales</button>
+                ${!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0 || currentDaySales.mpesaAmount > 0) ? 
+                    `<button class="btn-warning" style="margin-left: 10px;" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>` : ''}
+                ${currentDaySales.isClosed ? 
+                    `<button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button>` : ''}
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-tasks"></i> Low Stock Alerts</h2></div>
+                <div class="progress-section">
+                    ${inventory.map(item => {
+                        const percentage = (item.stockKg / (item.lowStockAlert * 3)) * 100;
+                        const isLow = item.stockKg <= item.lowStockAlert;
+                        return `
+                            <div class="stock-item">
+                                <div class="stock-info">
+                                    <span class="stock-name">${item.name}</span>
+                                    <span class="stock-quantity">${item.stockKg.toFixed(1)} / ${item.lowStockAlert} kg</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill ${isLow ? 'low' : ''}" style="width: ${Math.min(100, percentage)}%"></div>
+                                </div>
+                                ${isLow ? `<div style="color: #ef4444; font-size: 0.7rem; margin-top: 5px;"><i class="fas fa-exclamation-triangle"></i> Low Stock Alert!</div>` : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    function renderInventory() {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h2><i class="fas fa-boxes"></i> Inventory Management</h2>
+                    ${hasPermission('all') ? `<button class="btn" onclick="openAddStockModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Product</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Profit/kg</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            ${inventory.map(product => `
+                                <tr>
+                                    <td>${product.name}</td>
+                                    <td>${product.animal}</td>
+                                    <td style="${product.stockKg <= product.lowStockAlert ? 'color: #ef4444; font-weight: bold;' : ''}">${product.stockKg.toFixed(1)} kg</td>
+                                    <td>KES ${product.priceKg.toLocaleString()}</td>
+                                    <td>KES ${product.costKg.toLocaleString()}</td>
+                                    <td style="color: #10b981;">KES ${(product.priceKg - product.costKg).toLocaleString()}</td>
+                                    <td class="action-buttons">
+                                        ${hasPermission('all') ? `<button class="btn-edit" onclick="openFullEditModal(${product.id})"><i class="fas fa-edit"></i> Edit</button>
+                                        <button class="btn-delete" onclick="deleteInventoryProduct(${product.id})"><i class="fas fa-trash"></i> Delete</button>` : ''}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    function renderSales() {
+        const todayTotal = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        const todayProfit = inventory.reduce((sum, item) => sum + (item.stockKg * (item.priceKg - item.costKg)), 0);
+        
+        return `
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-chart-line"></i> Today's Sales</h2></div>
+                <div class="summary-card">
+                    <div class="summary-row"><strong>Date:</strong> ${currentDaySales.date}</div>
+                    <div class="summary-row"><strong>Total KG Sold:</strong> ${currentDaySales.totalKg.toFixed(1)} kg</div>
+                    <div class="summary-row"><strong>Cash Amount:</strong> KES ${currentDaySales.cashAmount.toLocaleString()}</div>
+                    <div class="summary-row"><strong>M-Pesa Amount:</strong> KES ${currentDaySales.mpesaAmount.toLocaleString()}</div>
+                    <div class="summary-row total"><strong>Total Revenue:</strong> KES ${todayTotal.toLocaleString()}</div>
+                    <div class="summary-row"><strong>Status:</strong> ${currentDaySales.isClosed ? '<span style="color: #ef4444;">Closed</span>' : '<span style="color: #10b981;">Open</span>'}</div>
+                </div>
+                ${!currentDaySales.isClosed ? `
+                    <div class="form-grid" style="margin-top: 20px;">
+                        <div class="form-group"><label>KG Sold</label><input type="number" id="dailyKg" step="0.1" placeholder="0.0"></div>
+                        <div class="form-group"><label>Cash Amount</label><input type="number" id="dailyCash" step="10" placeholder="KES"></div>
+                        <div class="form-group"><label>M-Pesa Amount</label><input type="number" id="dailyMpesa" step="10" placeholder="KES"></div>
+                    </div>
+                    <button class="btn btn-success" onclick="updateDailySales()"><i class="fas fa-plus"></i> Add Sales</button>
+                    ${currentDaySales.totalKg > 0 ? `<button class="btn-warning" style="margin-left: 10px;" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>` : ''}
+                ` : `<button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button>`}
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-history"></i> Daily Closing History</h2></div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead><tr><th>Date</th><th>Total KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${hasPermission('all') ? '<th>Actions</th>' : ''}</tr></thead>
+                        <tbody>
+                            ${dailyClosings.map(record => `
+                                <tr>
+                                    <td>${record.date}</td>
+                                    <td>${record.totalKg.toFixed(1)} kg</td>
+                                    <td>KES ${record.cashAmount.toLocaleString()}</td>
+                                    <td>KES ${record.mpesaAmount.toLocaleString()}</td>
+                                    <td style="font-weight: bold; color: #10b981;">KES ${record.totalRevenue.toLocaleString()}</td>
+                                    <td>${record.closedBy}</td>
+                                    ${hasPermission('all') ? `<td><button class="btn-delete" onclick="deleteClosingRecord(${record.id})"><i class="fas fa-trash"></i> Delete</button></td>` : ''}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    function renderExpenses() {
+        const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+        
+        return `
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-receipt"></i> Add Expense</h2></div>
+                <div class="form-grid">
+                    <div class="form-group"><label>Category</label><input type="text" id="expCategory" placeholder="e.g., Rent, Transport, Meat Supply"></div>
+                    <div class="form-group"><label>Amount (KES)</label><input type="number" id="expAmount" step="10" placeholder="0"></div>
+                    <div class="form-group"><label>Description</label><input type="text" id="expDesc" placeholder="Optional description"></div>
+                </div>
+                <button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-list"></i> Expense History</h2><strong>Total: KES ${totalExpenses.toLocaleString()}</strong></div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th>${hasPermission('all') ? '<th>Actions</th>' : ''}</tr></thead>
+                        <tbody>
+                            ${expenses.map(expense => `
+                                <tr>
+                                    <td>${expense.date}</td>
+                                    <td>${expense.category}</td>
+                                    <td style="color: #ef4444;">KES ${expense.amount.toLocaleString()}</td>
+                                    <td>${expense.description || '-'}</td>
+                                    ${hasPermission('all') ? `<td class="action-buttons">
+                                        <button class="btn-edit" onclick="openEditExpenseModal(${expense.id})"><i class="fas fa-edit"></i> Edit</button>
+                                        <button class="btn-delete" onclick="deleteExpense(${expense.id})"><i class="fas fa-trash"></i> Delete</button>
+                                    </td>` : ''}
+                                </tr>
+                            `).join('')}
+                            ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align: center;">No expenses recorded</td></tr>' : ''}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    function renderUsers() {
+        if (!hasPermission('all')) {
+            return `<div class="card"><p>You don't have permission to view this page.</p></div>`;
+        }
+        
+        return `
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-users"></i> User Management</h2></div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Password</th><th>Email</th><th>Phone</th><th>Last Login</th></tr></thead>
+                        <tbody>
+                            ${users.map(user => `
+                                <tr>
+                                    <td>${user.username}</td>
+                                    <td>${user.fullName || '-'}</td>
+                                    <td>${user.role === 'super_admin' ? '<span class="role-badge-super"><i class="fas fa-crown"></i> Super Admin</span>' : '<span class="role-badge-admin"><i class="fas fa-user-shield"></i> Admin</span>'}</td>
+                                    <td class="password-cell">
+                                        <span>${visiblePasswords[user.id] ? user.password : '••••••••'}</span>
+                                        <button class="eye-btn" onclick="togglePasswordVisibility(${user.id})"><i class="fas ${visiblePasswords[user.id] ? 'fa-eye-slash' : 'fa-eye'}"></i></button>
+                                        <button class="copy-btn" onclick="copyPassword('${user.username}', '${user.password}')"><i class="fas fa-copy"></i></button>
+                                    </td>
+                                    <td>${user.email || '-'}</td>
+                                    <td>${user.phone || '-'}</td>
+                                    <td>${user.lastLogin || 'Never'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    function renderReports() {
+        const totalRevenue = dailyClosings.reduce((sum, record) => sum + record.totalRevenue, 0);
+        const totalKg = dailyClosings.reduce((sum, record) => sum + record.totalKg, 0);
+        const totalExpensesAll = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+        const netProfit = totalRevenue - totalExpensesAll;
+        
+        return `
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-title">Total Revenue (All Time)</div><div class="stat-value">KES ${totalRevenue.toLocaleString()}</div></div>
+                <div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${totalKg.toFixed(1)} kg</div></div>
+                <div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${totalExpensesAll.toLocaleString()}</div></div>
+                <div class="stat-card"><div class="stat-title">Net Profit</div><div class="stat-value" style="color: ${netProfit >= 0 ? '#10b981' : '#ef4444'};">KES ${netProfit.toLocaleString()}</div></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-chart-bar"></i> Recent Activity Logs</h2></div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
+                        <tbody>
+                            ${activityLogs.slice(0, 20).map(log => `
+                                <tr>
+                                    <td>${log.timestamp}</td>
+                                    <td>${log.user}</td>
+                                    <td>${log.userRole}</td>
+                                    <td>${log.action}</td>
+                                    <td>${log.details}</td>
+                                </tr>
+                            `).join('')}
+                            ${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align: center;">No activity logs</td></tr>' : ''}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    function renderApp() {
+        const app = document.getElementById('app');
+        
+        if (!currentUser) {
+            loadAllData();
+            initializeUsers();
+            if (loadSession()) {
+                renderApp();
+                return;
+            }
+            app.innerHTML = renderLogin();
+            return;
+        }
+        
+        let mainContent = '';
+        switch(currentPage) {
+            case 'dashboard': mainContent = renderDashboard(); break;
+            case 'inventory': mainContent = renderInventory(); break;
+            case 'sales': mainContent = renderSales(); break;
+            case 'expenses': mainContent = renderExpenses(); break;
+            case 'users': mainContent = renderUsers(); break;
+            case 'reports': mainContent = renderReports(); break;
+            default: mainContent = renderDashboard();
+        }
+        
+        const sidebar = `
+            <div class="sidebar">
+                <div class="logo-area">
+                    <h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1>
+                    <p>Butchery Pro</p>
+                </div>
+                <div class="nav-item ${currentPage === 'dashboard' ? 'active' : ''}" onclick="changePage('dashboard')">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </div>
+                <div class="nav-item ${currentPage === 'inventory' ? 'active' : ''}" onclick="changePage('inventory')">
+                    <i class="fas fa-boxes"></i> Inventory
+                </div>
+                <div class="nav-item ${currentPage === 'sales' ? 'active' : ''}" onclick="changePage('sales')">
+                    <i class="fas fa-chart-line"></i> Sales
+                </div>
+                <div class="nav-item ${currentPage === 'expenses' ? 'active' : ''}" onclick="changePage('expenses')">
+                    <i class="fas fa-receipt"></i> Expenses
+                </div>
+                ${hasPermission('all') ? `
+                <div class="nav-item ${currentPage === 'users' ? 'active' : ''}" onclick="changePage('users')">
+                    <i class="fas fa-users"></i> Users
+                </div>` : ''}
+                <div class="nav-item ${currentPage === 'reports' ? 'active' : ''}" onclick="changePage('reports')">
+                    <i class="fas fa-chart-bar"></i> Reports
+                </div>
+                <div class="nav-item" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </div>
+            </div>
+        `;
+        
+        const topBar = `
+            <div class="top-bar">
+                <h2>${currentPage.charAt(0).toUpperCase() + currentPage.slice(1)}</h2>
+                <div class="user-info">
+                    <span class="role-badge">${currentUser.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span>
+                    <span><i class="fas fa-user"></i> ${currentUser.fullName || currentUser.username}</span>
+                </div>
+            </div>
+        `;
+        
+        app.innerHTML = `
+            <div class="app-container">
+                <div class="dashboard-layout">
+                    ${sidebar}
+                    <div class="main-content">
+                        ${topBar}
+                        ${mainContent}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    window.changePage = (page) => {
+        currentPage = page;
+        saveSession();
+        renderApp();
+    };
+    
+    // Initialize and render
+    initializeUsers();
+    loadAllData();
+    renderApp();
+</script>
+</body>
+</html>
