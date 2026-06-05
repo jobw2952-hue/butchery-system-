@@ -100,7 +100,7 @@
 <div class="version-badge" onclick="showVersionInfo()">v6.0.0 🔗 Cloud Database</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - ORIGINAL STYLE WITH FIXES ==========
+    // ========== BISMILAH BUTCHERY PRO - ORIGINAL STYLE WITH FULL PRODUCT EDITING ==========
     
     const API_URL = '';
     let token = localStorage.getItem('token');
@@ -375,6 +375,190 @@
         }
     };
     
+    // EDIT PRODUCT - FULL MODAL (Both Super Admin and Admin can edit)
+    window.openEditProductModal = async (productId) => {
+        const product = inventory.find(p => p.id === productId);
+        if (!product) return;
+        
+        const modalHtml = `
+            <div class="modal" id="editProductModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3>
+                        <button class="close-modal" onclick="closeEditProductModal()">&times;</button>
+                    </div>
+                    <div class="form-group">
+                        <label>Product Name</label>
+                        <input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}">
+                    </div>
+                    <div class="form-group">
+                        <label>Animal Type</label>
+                        <select id="editAnimal">
+                            <option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option>
+                            <option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option>
+                            <option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option>
+                            <option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Stock Quantity (kg)</label>
+                        <input type="number" id="editStock" step="0.1" value="${product.stockKg}">
+                    </div>
+                    <div class="form-group">
+                        <label>Selling Price (KES per kg)</label>
+                        <input type="number" id="editPrice" step="10" value="${product.priceKg}">
+                    </div>
+                    <div class="form-group">
+                        <label>Cost Price (KES per kg)</label>
+                        <input type="number" id="editCost" step="10" value="${product.costKg}">
+                    </div>
+                    <div class="form-group">
+                        <label>Low Stock Alert (kg)</label>
+                        <input type="number" id="editAlert" step="1" value="${product.lowStockAlert}">
+                    </div>
+                    <div style="display:flex; gap:12px; margin-top:20px;">
+                        <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
+                        <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        const existing = document.getElementById('editProductModal');
+        if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    
+    window.closeEditProductModal = () => {
+        const modal = document.getElementById('editProductModal');
+        if (modal) modal.remove();
+    };
+    
+    window.saveProductEdit = async (productId) => {
+        const name = document.getElementById('editName')?.value;
+        const animal = document.getElementById('editAnimal')?.value;
+        const stockKg = parseFloat(document.getElementById('editStock')?.value);
+        const priceKg = parseFloat(document.getElementById('editPrice')?.value);
+        const costKg = parseFloat(document.getElementById('editCost')?.value);
+        const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
+        
+        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
+            alert('Please fill all required fields');
+            return;
+        }
+        
+        const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
+            name, animal, stockKg, priceKg, costKg, lowStockAlert
+        });
+        
+        if (result) {
+            closeEditProductModal();
+            await loadAllData();
+            renderApp();
+            alert('✅ Product updated successfully!');
+        } else {
+            alert('Update failed. Please try again.');
+        }
+    };
+    
+    // ADD PRODUCT - FULL MODAL (Super Admin only)
+    window.openAddProductModal = () => {
+        if (!isSuperAdmin()) return alert('Only Super Admin can add products');
+        
+        const modalHtml = `
+            <div class="modal" id="addProductModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-plus-circle"></i> Add New Product</h3>
+                        <button class="close-modal" onclick="closeAddProductModal()">&times;</button>
+                    </div>
+                    <div class="form-group">
+                        <label>Product Name *</label>
+                        <input type="text" id="addName" placeholder="Enter product name">
+                    </div>
+                    <div class="form-group">
+                        <label>Animal Type *</label>
+                        <select id="addAnimal">
+                            <option value="Cow">Cow</option>
+                            <option value="Goat">Goat</option>
+                            <option value="Chicken">Chicken</option>
+                            <option value="Liver">Liver</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Initial Stock (kg) *</label>
+                        <input type="number" id="addStock" step="0.1" placeholder="Enter stock quantity">
+                    </div>
+                    <div class="form-group">
+                        <label>Selling Price (KES per kg) *</label>
+                        <input type="number" id="addPrice" step="10" placeholder="Enter selling price">
+                    </div>
+                    <div class="form-group">
+                        <label>Cost Price (KES per kg)</label>
+                        <input type="number" id="addCost" step="10" placeholder="Enter cost price (optional)">
+                    </div>
+                    <div class="form-group">
+                        <label>Low Stock Alert (kg)</label>
+                        <input type="number" id="addAlert" step="1" value="10" placeholder="Alert when stock below">
+                    </div>
+                    <div style="display:flex; gap:12px; margin-top:20px;">
+                        <button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;">Add Product</button>
+                        <button class="btn-delete" onclick="closeAddProductModal()" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        const existing = document.getElementById('addProductModal');
+        if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    
+    window.closeAddProductModal = () => {
+        const modal = document.getElementById('addProductModal');
+        if (modal) modal.remove();
+    };
+    
+    window.submitAddProduct = async () => {
+        const name = document.getElementById('addName')?.value;
+        const animal = document.getElementById('addAnimal')?.value;
+        const stockKg = parseFloat(document.getElementById('addStock')?.value);
+        const priceKg = parseFloat(document.getElementById('addPrice')?.value);
+        let costKg = parseFloat(document.getElementById('addCost')?.value);
+        const lowStockAlert = parseFloat(document.getElementById('addAlert')?.value) || 10;
+        
+        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
+            alert('Please fill all required fields (Name, Stock, Price)');
+            return;
+        }
+        
+        if (isNaN(costKg)) costKg = priceKg * 0.7;
+        
+        const result = await apiCall('/api/inventory', 'POST', {
+            name, animal, stockKg, priceKg, costKg, lowStockAlert
+        });
+        
+        if (result) {
+            closeAddProductModal();
+            await loadAllData();
+            renderApp();
+            alert(`✅ Product "${name}" added successfully!`);
+        } else {
+            alert('Failed to add product. Please try again.');
+        }
+    };
+    
+    window.deleteInventoryProduct = async (productId) => {
+        if (!canDelete()) return alert('Only Super Admin can delete products');
+        const product = inventory.find(p => p.id === productId);
+        if (product && confirm(`Delete "${product.name}"? This cannot be undone.`)) {
+            const result = await apiCall(`/api/inventory/${productId}`, 'DELETE');
+            if (result) {
+                await loadAllData();
+                renderApp();
+                alert('✅ Product deleted');
+            }
+        }
+    };
+    
     // Sales functions
     window.updateDailySales = async () => {
         if (currentDaySales.isClosed) return alert('Today is closed! Start a new day first.');
@@ -416,51 +600,6 @@
             await loadAllData();
             renderApp();
             alert('✅ New day started!');
-        }
-    };
-    
-    // Inventory functions - BOTH Admin AND Super Admin can edit
-    window.openFullEditModal = async (productId) => {
-        const product = inventory.find(p => p.id === productId);
-        if (!product) return;
-        
-        const newStock = prompt(`Edit stock for ${product.name}\nCurrent stock: ${product.stockKg} kg\nEnter new stock quantity:`, product.stockKg);
-        if (newStock !== null && !isNaN(parseFloat(newStock))) {
-            const result = await apiCall(`/api/inventory/${productId}`, 'PUT', { ...product, stockKg: parseFloat(newStock) });
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Stock updated!');
-            }
-        }
-    };
-    
-    window.deleteInventoryProduct = async (productId) => {
-        if (!canDelete()) return alert('Only Super Admin can delete products');
-        const product = inventory.find(p => p.id === productId);
-        if (product && confirm(`Delete "${product.name}"? This cannot be undone.`)) {
-            const result = await apiCall(`/api/inventory/${productId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Product deleted');
-            }
-        }
-    };
-    
-    window.openAddStockModal = async () => {
-        if (!isSuperAdmin()) return alert('Only Super Admin can add products');
-        const name = prompt('Product name:');
-        const animal = prompt('Animal (Cow/Goat/Chicken/Liver):');
-        const stock = parseFloat(prompt('Stock kg:'));
-        const price = parseFloat(prompt('Price per kg:'));
-        if (name && animal && stock && price) {
-            const result = await apiCall('/api/inventory', 'POST', { name, animal, stockKg: stock, priceKg: price });
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert(`✅ "${name}" added successfully!`);
-            }
         }
     };
     
@@ -648,7 +787,7 @@
         
         return `<div class="report-selector"><label>📊 Report Type</label><select onchange="changeReport(this.value)" style="width:auto;"><option value="daily" ${selectedReport === 'daily' ? 'selected' : ''}>📅 Last 7 Days</option><option value="monthly" ${selectedReport === 'monthly' ? 'selected' : ''}>📆 All Records (${dailyClosings.length} days)</option></select></div>
         <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:16px; margin-bottom:20px; display:flex; justify-content:space-between; flex-wrap:wrap;"><div><h3>Total Revenue</h3><div style="font-size:2rem; font-weight:700;">KES ${totalRevenue.toLocaleString()}</div></div><div><h3>Total KG Sold</h3><div style="font-size:2rem; font-weight:700;">${totalKg} kg</div></div><div><h3>Average Per Day</h3><div style="font-size:1.5rem;">KES ${filtered.length ? Math.round(totalRevenue/filtered.length).toLocaleString() : 0}</div></div></div>
-        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}<tr></thead><tbody>${filtered.map(r => `</td><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
+        <div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div>`;
     }
     
     // Render Sales
@@ -694,7 +833,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddStockModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openFullEditModal(${p.id})">Edit Stock</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</tr>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit Product</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? `<div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpense()"><i class="fas fa-plus"></i> Add Expense</button><div class="table-container" style="margin-top:20px;"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
     }
     
     // Initialize
