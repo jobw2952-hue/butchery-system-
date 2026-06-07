@@ -110,12 +110,11 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.2.0 🔧 Fixed Precision</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.5.0 🔧 Fixed Admin Sales</div>
 
 <script>
     // ========== BISMILAH BUTCHERY PRO - COMPLETE VERSION ==========
     
-    // Helper function to round to 2 decimal places
     function roundToTwo(num) {
         if (isNaN(num)) return 0;
         return Math.round(num * 100) / 100;
@@ -135,7 +134,6 @@
     let profitChart = null;
     let selectedSalesDate = new Date().toISOString().split('T')[0];
     
-    // Data stores
     let users = [];
     let inventory = [];
     let dailyClosings = [];
@@ -244,7 +242,7 @@
         }
     };
     
-    // Auto calculate KG with rounding
+    // Auto calculate KG
     window.autoCalculateKg = () => {
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
@@ -270,6 +268,103 @@
         const kgInput = document.getElementById('dailyKg');
         if (kgInput) kgInput.value = '';
         autoCalculateKg();
+    };
+    
+    // ADD SALE - FIXED FOR BOTH ADMIN AND SUPER ADMIN
+    window.addSale = async () => {
+        console.log('addSale function called');
+        
+        const productSelect = document.getElementById('saleProduct');
+        const selectedProductId = productSelect?.value;
+        let kg = parseFloat(document.getElementById('dailyKg')?.value);
+        const cash = parseFloat(document.getElementById('dailyCash')?.value) || 0;
+        const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value) || 0;
+        const saleDate = document.getElementById('salesDatePicker')?.value || new Date().toISOString().split('T')[0];
+        
+        kg = roundToTwo(kg);
+        
+        if (!selectedProductId || selectedProductId === '') {
+            alert('Please select a product');
+            return;
+        }
+        if (isNaN(kg) || kg <= 0) {
+            alert('Enter valid KG (auto-calculated from amount)');
+            return;
+        }
+        
+        const product = inventory.find(p => p.id == selectedProductId);
+        if (!product) {
+            alert('Product not found');
+            return;
+        }
+        
+        if (product.stockKg < kg) {
+            alert(`Not enough stock! Only ${roundToTwo(product.stockKg)} kg available for ${product.name}`);
+            return;
+        }
+        
+        const result = await apiCall('/api/current-sales', 'POST', { 
+            productId: selectedProductId,
+            productName: product.name,
+            kg, 
+            cash: roundToTwo(cash), 
+            mpesa: roundToTwo(mpesa),
+            date: saleDate
+        });
+        
+        if (result) {
+            await loadSalesForDate(saleDate);
+            await loadAllData();
+            renderApp();
+            alert(`✅ Sold ${kg}kg of ${product.name} on ${saleDate}!`);
+            document.getElementById('dailyKg').value = '';
+            document.getElementById('dailyCash').value = '';
+            document.getElementById('dailyMpesa').value = '';
+            document.getElementById('saleProduct').value = '';
+        } else {
+            alert('Failed to add sale. Please try again.');
+        }
+    };
+    
+    // CLOSE DAY - FIXED FOR BOTH ADMIN AND SUPER ADMIN
+    window.closeDay = async () => {
+        console.log('closeDay function called');
+        
+        const today = selectedSalesDate;
+        if (currentDaySales.isClosed) {
+            alert('Already closed');
+            return;
+        }
+        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) {
+            alert('No sales to close');
+            return;
+        }
+        
+        const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        
+        if (confirm(`Close ${today}?\nTotal KG: ${roundToTwo(currentDaySales.totalKg)} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${roundToTwo(total).toLocaleString()}`)) {
+            const result = await apiCall('/api/close-day', 'POST', { date: today });
+            if (result) {
+                await loadSalesForDate(today);
+                await loadAllData();
+                renderApp();
+                alert('✅ Day closed!');
+            } else {
+                alert('Failed to close day.');
+            }
+        }
+    };
+    
+    // START NEW DAY
+    window.startNewDay = async () => {
+        const today = selectedSalesDate;
+        const result = await apiCall('/api/new-day', 'POST', { date: today });
+        if (result) {
+            await loadSalesForDate(today);
+            await loadAllData();
+            renderApp();
+            alert('✅ New day started!');
+        }
     };
     
     // Delete sale entry
@@ -366,7 +461,7 @@
                     <div class="summary-box"><h3>Total Profit</h3><div class="value ${totalProfit >= 0 ? 'profit' : 'loss'}">KES ${totalProfit.toLocaleString()}</div></div>
                 </div>
                 <table>
-                    <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead>
+                    <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></table></thead>
                     <tbody>
                         ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}
                     </tbody>
@@ -420,93 +515,6 @@
         renderApp();
     };
     
-    // Sales functions with rounding
-    window.updateDailySales = async () => {
-        const productSelect = document.getElementById('saleProduct');
-        const selectedProductId = productSelect?.value;
-        let kg = parseFloat(document.getElementById('dailyKg')?.value);
-        const cash = parseFloat(document.getElementById('dailyCash')?.value) || 0;
-        const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value) || 0;
-        const saleDate = document.getElementById('salesDatePicker')?.value || new Date().toISOString().split('T')[0];
-        
-        kg = roundToTwo(kg);
-        
-        if (!selectedProductId || selectedProductId === '') {
-            alert('Please select a product');
-            return;
-        }
-        if (isNaN(kg) || kg <= 0) return alert('Enter valid KG');
-        if (isNaN(cash) || cash < 0) return alert('Enter valid Cash');
-        if (isNaN(mpesa) || mpesa < 0) return alert('Enter valid M-Pesa');
-        
-        const product = inventory.find(p => p.id == selectedProductId);
-        if (!product) return alert('Product not found');
-        
-        if (product.stockKg < kg) {
-            alert(`Not enough stock! Only ${roundToTwo(product.stockKg)} kg available for ${product.name}`);
-            return;
-        }
-        
-        const result = await apiCall('/api/current-sales', 'POST', { 
-            productId: selectedProductId,
-            productName: product.name,
-            kg, 
-            cash: roundToTwo(cash), 
-            mpesa: roundToTwo(mpesa),
-            date: saleDate
-        });
-        
-        if (result) {
-            await loadSalesForDate(saleDate);
-            await loadAllData();
-            renderApp();
-            alert(`✅ Sold ${kg}kg of ${product.name} on ${saleDate}!`);
-            if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
-            if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
-            if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
-            if (document.getElementById('saleProduct')) document.getElementById('saleProduct').value = '';
-        }
-    };
-    
-    window.closeDay = async () => {
-        const today = selectedSalesDate;
-        if (currentDaySales.isClosed) return alert('Already closed');
-        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) return alert('No sales to close');
-        const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
-        
-        let salesSummary = '';
-        if (currentDaySales.salesByProduct) {
-            salesSummary = '\n\nSales by Product:';
-            for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
-                const productInfo = inventory.find(p => p.name === product);
-                const revenue = kg * (productInfo?.priceKg || 0);
-                salesSummary += `\n- ${product}: ${roundToTwo(kg)} kg = KES ${roundToTwo(revenue).toLocaleString()}`;
-            }
-        }
-        
-        if (confirm(`Close ${today}?\nTotal KG: ${roundToTwo(currentDaySales.totalKg)} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${roundToTwo(total).toLocaleString()}${salesSummary}`)) {
-            const result = await apiCall('/api/close-day', 'POST', { date: today });
-            if (result) {
-                await loadSalesForDate(today);
-                await loadAllData();
-                renderApp();
-                alert('✅ Day closed!');
-            }
-        }
-    };
-    
-    window.startNewDay = async () => {
-        const today = selectedSalesDate;
-        if (!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0)) return alert('Close current day first');
-        const result = await apiCall('/api/new-day', 'POST', { date: today });
-        if (result) {
-            await loadSalesForDate(today);
-            await loadAllData();
-            renderApp();
-            alert('✅ New day started!');
-        }
-    };
-    
     // Expense with date picker
     window.addExpenseWithDate = async () => {
         const category = document.getElementById('expCategory')?.value;
@@ -527,11 +535,36 @@
         if (result) {
             await loadAllData();
             renderApp();
-            if (document.getElementById('expCategory')) document.getElementById('expCategory').value = '';
-            if (document.getElementById('expAmount')) document.getElementById('expAmount').value = '';
-            if (document.getElementById('expDesc')) document.getElementById('expDesc').value = '';
-            if (document.getElementById('expenseDate')) document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('expCategory').value = '';
+            document.getElementById('expAmount').value = '';
+            document.getElementById('expDesc').value = '';
+            document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
             alert('✅ Expense added');
+        }
+    };
+    
+    window.deleteExpense = async (expenseId) => {
+        if (!canDelete()) return alert('Only Super Admin can delete expenses');
+        const expense = expenses.find(e => e.id === expenseId);
+        if (expense && confirm(`Delete expense: ${expense.category}?`)) {
+            const result = await apiCall(`/api/expenses/${expenseId}`, 'DELETE');
+            if (result) {
+                await loadAllData();
+                renderApp();
+                alert('✅ Expense deleted');
+            }
+        }
+    };
+    
+    window.deleteClosingRecord = async (recordId) => {
+        if (!canDelete()) return alert('Only Super Admin can delete closing records');
+        if (confirm('Delete this closing record?')) {
+            const result = await apiCall(`/api/closings/${recordId}`, 'DELETE');
+            if (result) {
+                await loadAllData();
+                renderApp();
+                alert('✅ Record deleted');
+            }
         }
     };
     
@@ -558,54 +591,13 @@
             return;
         }
         
-        const modalHtml = `
-            <div class="reset-confirm-modal" id="resetConfirmModal">
-                <div class="reset-confirm-box">
-                    <i class="fas fa-exclamation-triangle" style="font-size:48px; color:#ef4444; margin-bottom:20px;"></i>
-                    <h3 style="margin-bottom:15px;">⚠️ WARNING: RESET ALL DATA</h3>
-                    <p style="margin-bottom:20px; color:#64748b;">This will permanently delete:</p>
-                    <ul style="text-align:left; margin-bottom:20px; color:#64748b;">
-                        <li>📊 All sales records</li>
-                        <li>📅 All closed days</li>
-                        <li>💸 All expenses</li>
-                        <li>📋 All activity logs</li>
-                        <li>📦 Set all inventory stock to 0 kg</li>
-                    </ul>
-                    <p style="color:#ef4444; margin-bottom:20px;"><strong>This action CANNOT be undone!</strong></p>
-                    <button onclick="confirmReset()" style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; margin-right:10px;">Yes, Reset Everything</button>
-                    <button onclick="closeResetModal()" style="background:#94a3b8; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer;">Cancel</button>
-                </div>
-            </div>
-        `;
-        const existing = document.getElementById('resetConfirmModal');
-        if (existing) existing.remove();
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-    };
-    
-    window.confirmReset = async () => {
-        closeResetModal();
-        
-        try {
-            const response = await fetch('/api/reset-all', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            
-            if (response.ok) {
-                await loadAllData();
+        if (confirm('⚠️ WARNING: This will delete ALL data! This cannot be undone!')) {
+            apiCall('/api/reset-all', 'POST').then(() => {
+                loadAllData();
                 renderApp();
                 alert('✅ All data has been reset to zero!');
-            } else {
-                alert('Reset failed. Please try again.');
-            }
-        } catch (error) {
-            alert('Error resetting data. Make sure server is running.');
+            });
         }
-    };
-    
-    window.closeResetModal = () => {
-        const modal = document.getElementById('resetConfirmModal');
-        if (modal) modal.remove();
     };
     
     // User functions
@@ -622,37 +614,13 @@
                         <h3><i class="fas fa-user-plus"></i> Add New User</h3>
                         <button class="close-modal" onclick="closeAddUserModal()">&times;</button>
                     </div>
-                    <div class="form-group">
-                        <label>Full Name *</label>
-                        <input type="text" id="newUserFullName" placeholder="Enter full name">
-                    </div>
-                    <div class="form-group">
-                        <label>Username *</label>
-                        <input type="text" id="newUserUsername" placeholder="Enter username">
-                    </div>
-                    <div class="form-group">
-                        <label>Password *</label>
-                        <input type="password" id="newUserPassword" placeholder="Enter password">
-                    </div>
-                    <div class="form-group">
-                        <label>Confirm Password *</label>
-                        <input type="password" id="newUserConfirmPassword" placeholder="Confirm password">
-                    </div>
-                    <div class="form-group">
-                        <label>Email (Optional)</label>
-                        <input type="email" id="newUserEmail" placeholder="Enter email">
-                    </div>
-                    <div class="form-group">
-                        <label>Phone (Optional)</label>
-                        <input type="tel" id="newUserPhone" placeholder="Enter phone number">
-                    </div>
-                    <div class="form-group">
-                        <label>Role</label>
-                        <select id="newUserRole">
-                            <option value="admin">Admin</option>
-                            <option value="super_admin">Super Admin</option>
-                        </select>
-                    </div>
+                    <div class="form-group"><label>Full Name *</label><input type="text" id="newUserFullName" placeholder="Enter full name"></div>
+                    <div class="form-group"><label>Username *</label><input type="text" id="newUserUsername" placeholder="Enter username"></div>
+                    <div class="form-group"><label>Password *</label><input type="password" id="newUserPassword" placeholder="Enter password"></div>
+                    <div class="form-group"><label>Confirm Password *</label><input type="password" id="newUserConfirmPassword" placeholder="Confirm password"></div>
+                    <div class="form-group"><label>Email (Optional)</label><input type="email" id="newUserEmail" placeholder="Enter email"></div>
+                    <div class="form-group"><label>Phone (Optional)</label><input type="tel" id="newUserPhone" placeholder="Enter phone number"></div>
+                    <div class="form-group"><label>Role</label><select id="newUserRole"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
                         <button class="btn btn-success" onclick="submitAddUser()" style="flex:1;">Create User</button>
                         <button class="btn-delete" onclick="closeAddUserModal()" style="flex:1;">Cancel</button>
@@ -680,27 +648,20 @@
         const role = document.getElementById('newUserRole')?.value;
         
         if (!fullName || !username || !password) {
-            alert('Please fill all required fields (Full Name, Username, Password)');
+            alert('Please fill all required fields');
             return;
         }
-        
         if (password !== confirmPassword) {
             alert('Passwords do not match!');
             return;
         }
-        
         if (password.length < 4) {
             alert('Password must be at least 4 characters');
             return;
         }
         
         const result = await apiCall('/api/users', 'POST', {
-            username,
-            password,
-            fullName,
-            role: role || 'admin',
-            email: email || '',
-            phone: phone || ''
+            username, password, fullName, role: role || 'admin', email: email || '', phone: phone || ''
         });
         
         if (result) {
@@ -725,35 +686,12 @@
                         <h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3>
                         <button class="close-modal" onclick="closeEditProductModal()">&times;</button>
                     </div>
-                    <div class="form-group">
-                        <label>Product Name</label>
-                        <input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}">
-                    </div>
-                    <div class="form-group">
-                        <label>Animal Type</label>
-                        <select id="editAnimal">
-                            <option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option>
-                            <option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option>
-                            <option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option>
-                            <option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Stock Quantity (kg)</label>
-                        <input type="number" id="editStock" step="0.1" value="${product.stockKg}">
-                    </div>
-                    <div class="form-group">
-                        <label>Selling Price (KES per kg)</label>
-                        <input type="number" id="editPrice" step="10" value="${product.priceKg}">
-                    </div>
-                    <div class="form-group">
-                        <label>Cost Price (KES per kg)</label>
-                        <input type="number" id="editCost" step="10" value="${product.costKg}">
-                    </div>
-                    <div class="form-group">
-                        <label>Low Stock Alert (kg)</label>
-                        <input type="number" id="editAlert" step="1" value="${product.lowStockAlert}">
-                    </div>
+                    <div class="form-group"><label>Product Name</label><input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}"></div>
+                    <div class="form-group"><label>Animal Type</label><select id="editAnimal"><option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option><option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option><option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option><option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option></select></div>
+                    <div class="form-group"><label>Stock Quantity (kg)</label><input type="number" id="editStock" step="0.1" value="${product.stockKg}"></div>
+                    <div class="form-group"><label>Selling Price (KES per kg)</label><input type="number" id="editPrice" step="10" value="${product.priceKg}"></div>
+                    <div class="form-group"><label>Cost Price (KES per kg)</label><input type="number" id="editCost" step="10" value="${product.costKg}"></div>
+                    <div class="form-group"><label>Low Stock Alert (kg)</label><input type="number" id="editAlert" step="1" value="${product.lowStockAlert}"></div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
                         <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
                         <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
@@ -808,35 +746,12 @@
                         <h3><i class="fas fa-plus-circle"></i> Add New Product</h3>
                         <button class="close-modal" onclick="closeAddProductModal()">&times;</button>
                     </div>
-                    <div class="form-group">
-                        <label>Product Name *</label>
-                        <input type="text" id="addName" placeholder="Enter product name">
-                    </div>
-                    <div class="form-group">
-                        <label>Animal Type *</label>
-                        <select id="addAnimal">
-                            <option value="Cow">Cow</option>
-                            <option value="Goat">Goat</option>
-                            <option value="Chicken">Chicken</option>
-                            <option value="Liver">Liver</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Initial Stock (kg) *</label>
-                        <input type="number" id="addStock" step="0.1" placeholder="Enter stock quantity">
-                    </div>
-                    <div class="form-group">
-                        <label>Selling Price (KES per kg) *</label>
-                        <input type="number" id="addPrice" step="10" placeholder="Enter selling price">
-                    </div>
-                    <div class="form-group">
-                        <label>Cost Price (KES per kg)</label>
-                        <input type="number" id="addCost" step="10" placeholder="Enter cost price (optional)">
-                    </div>
-                    <div class="form-group">
-                        <label>Low Stock Alert (kg)</label>
-                        <input type="number" id="addAlert" step="1" value="10" placeholder="Alert when stock below">
-                    </div>
+                    <div class="form-group"><label>Product Name *</label><input type="text" id="addName" placeholder="Enter product name"></div>
+                    <div class="form-group"><label>Animal Type *</label><select id="addAnimal"><option value="Cow">Cow</option><option value="Goat">Goat</option><option value="Chicken">Chicken</option><option value="Liver">Liver</option></select></div>
+                    <div class="form-group"><label>Initial Stock (kg) *</label><input type="number" id="addStock" step="0.1" placeholder="Enter stock quantity"></div>
+                    <div class="form-group"><label>Selling Price (KES per kg) *</label><input type="number" id="addPrice" step="10" placeholder="Enter selling price"></div>
+                    <div class="form-group"><label>Cost Price (KES per kg)</label><input type="number" id="addCost" step="10" placeholder="Enter cost price (optional)"></div>
+                    <div class="form-group"><label>Low Stock Alert (kg)</label><input type="number" id="addAlert" step="1" value="10" placeholder="Alert when stock below"></div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
                         <button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;">Add Product</button>
                         <button class="btn-delete" onclick="closeAddProductModal()" style="flex:1;">Cancel</button>
@@ -857,8 +772,8 @@
     window.submitAddProduct = async () => {
         const name = document.getElementById('addName')?.value;
         const animal = document.getElementById('addAnimal')?.value;
-        let stockKg = roundToTwo(parseFloat(document.getElementById('addStock')?.value));
-        let priceKg = roundToTwo(parseFloat(document.getElementById('addPrice')?.value));
+        const stockKg = roundToTwo(parseFloat(document.getElementById('addStock')?.value));
+        const priceKg = roundToTwo(parseFloat(document.getElementById('addPrice')?.value));
         let costKg = roundToTwo(parseFloat(document.getElementById('addCost')?.value));
         const lowStockAlert = parseFloat(document.getElementById('addAlert')?.value) || 10;
         
@@ -866,7 +781,6 @@
             alert('Please fill all required fields (Name, Stock, Price)');
             return;
         }
-        
         if (isNaN(costKg)) costKg = priceKg * 0.7;
         
         const result = await apiCall('/api/inventory', 'POST', {
@@ -886,7 +800,7 @@
     window.deleteInventoryProduct = async (productId) => {
         if (!canDelete()) return alert('Only Super Admin can delete products');
         const product = inventory.find(p => p.id === productId);
-        if (product && confirm(`Delete "${product.name}"? This cannot be undone.`)) {
+        if (product && confirm(`Delete "${product.name}"?`)) {
             const result = await apiCall(`/api/inventory/${productId}`, 'DELETE');
             if (result) {
                 await loadAllData();
@@ -896,36 +810,10 @@
         }
     };
     
-    window.deleteExpense = async (expenseId) => {
-        if (!canDelete()) return alert('Only Super Admin can delete expenses');
-        const expense = expenses.find(e => e.id === expenseId);
-        if (expense && confirm(`Delete expense: ${expense.category}?`)) {
-            const result = await apiCall(`/api/expenses/${expenseId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Expense deleted');
-            }
-        }
-    };
-    
-    window.deleteClosingRecord = async (recordId) => {
-        if (!canDelete()) return alert('Only Super Admin can delete closing records');
-        if (confirm('Delete this closing record? This cannot be undone.')) {
-            const result = await apiCall(`/api/closings/${recordId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Record deleted');
-            }
-        }
-    };
-    
     window.openEditUserModal = async (userId) => {
         if (!canManageUsers()) return alert('Only Super Admin can manage users');
         const user = users.find(u => u.id === userId);
         if (!user) return;
-        
         const newFullName = prompt('Enter new full name:', user.fullName);
         if (newFullName && newFullName !== user.fullName) {
             const result = await apiCall(`/api/users/${userId}`, 'PUT', { fullName: newFullName });
@@ -1016,7 +904,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.2.0 (Fixed Decimal Precision)\n\nFeatures:\n• Auto KG Calculation\n• Date Picker for Sales\n• Profit/Loss Reports\n• Export to Excel/PDF\n• Charts & Graphs\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.5.0 (Fixed Admin Sales)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     function renderDashboard() {
@@ -1025,55 +913,19 @@
         const lowStock = inventory.filter(i => i.stockKg <= i.lowStockAlert).length;
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const weeklyRevenue = dailyClosings
-            .filter(r => new Date(r.date) >= sevenDaysAgo)
-            .reduce((sum, r) => sum + r.totalRevenue, 0);
+        const weeklyRevenue = dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).reduce((sum, r) => sum + r.totalRevenue, 0);
         
         return `<div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-title">Today's Sales</div>
-                <div class="stat-value">KES ${todayTotal.toLocaleString()}</div>
-                <div class="stat-change">💰 Cash: ${currentDaySales.cashAmount.toLocaleString()}</div>
-                <div class="stat-change">📱 M-Pesa: ${currentDaySales.mpesaAmount.toLocaleString()}</div>
-                <div class="stat-change">🥩 ${roundToTwo(currentDaySales.totalKg)} kg sold</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Inventory Value</div>
-                <div class="stat-value">KES ${roundToTwo(totalInventoryValue).toLocaleString()}</div>
-                <div class="stat-change">Based on cost price</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Low Stock Alerts</div>
-                <div class="stat-value">${lowStock}</div>
-                <div class="stat-change">Items below threshold</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">7-Day Revenue</div>
-                <div class="stat-value">KES ${roundToTwo(weeklyRevenue).toLocaleString()}</div>
-                <div class="stat-change">From ${dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).length} closed days</div>
-            </div>
+            <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${todayTotal.toLocaleString()}</div><div class="stat-change">💰 Cash: ${currentDaySales.cashAmount.toLocaleString()}</div><div class="stat-change">📱 M-Pesa: ${currentDaySales.mpesaAmount.toLocaleString()}</div><div class="stat-change">🥩 ${roundToTwo(currentDaySales.totalKg)} kg sold</div></div>
+            <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${roundToTwo(totalInventoryValue).toLocaleString()}</div></div>
+            <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div></div>
+            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${roundToTwo(weeklyRevenue).toLocaleString()}</div></div>
         </div>
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div>
-            <div class="progress-section">${inventory.map(item => { 
-                const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); 
-                const fillClass = percent < 30 ? 'low' : ''; 
-                return `<div class="stock-item">
-                    <div class="stock-info">
-                        <span class="stock-name">${item.name}</span>
-                        <span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill ${fillClass}" style="width: ${percent}%"></div>
-                    </div>
-                </div>`;
-            }).join('')}</div>
-        </div>`;
+        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
     }
     
     function renderReports() {
         let filtered = getFilteredClosings();
-        
         const totalRevenue = filtered.reduce((sum, r) => sum + r.totalRevenue, 0);
         const totalKg = filtered.reduce((sum, r) => sum + r.totalKg, 0);
         
@@ -1088,6 +940,7 @@
         const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
         const totalProfit = totalRevenue - totalExpenses;
         const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
+        const profitCardClass = totalProfit >= 0 ? 'profit-card' : 'loss-card';
         
         const chartLabels = filtered.map(r => r.date).reverse();
         const chartRevenue = filtered.map(r => r.totalRevenue).reverse();
@@ -1098,101 +951,27 @@
         setTimeout(() => {
             const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
             const profitCtx = document.getElementById('profitChart')?.getContext('2d');
-            
             if (revenueCtx) {
-                revenueChart = new Chart(revenueCtx, {
-                    type: 'line',
-                    data: {
-                        labels: chartLabels,
-                        datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 }]
-                    },
-                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
-                });
+                revenueChart = new Chart(revenueCtx, { type: 'line', data: { labels: chartLabels, datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4 }] }, options: { responsive: true } });
             }
-            
             if (profitCtx && filtered.length > 0) {
-                const dailyProfits = filtered.map(r => {
-                    const dayExpenses = filteredExpenses.filter(e => e.date === r.date).reduce((sum, e) => sum + e.amount, 0);
-                    return r.totalRevenue - dayExpenses;
-                }).reverse();
-                
-                profitChart = new Chart(profitCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: chartLabels,
-                        datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }]
-                    },
-                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
-                });
+                const dailyProfits = filtered.map(r => { const dayExpenses = filteredExpenses.filter(e => e.date === r.date).reduce((sum, e) => sum + e.amount, 0); return r.totalRevenue - dayExpenses; }).reverse();
+                profitChart = new Chart(profitCtx, { type: 'bar', data: { labels: chartLabels, datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }] }, options: { responsive: true } });
             }
         }, 100);
         
-        const profitCardClass = totalProfit >= 0 ? 'profit-card' : 'loss-card';
-        
-        return `<div class="report-selector">
-            <div class="date-range">
-                <label>📅 From:</label>
-                <input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()">
-                <label>To:</label>
-                <input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()">
-                <button class="btn-edit" onclick="resetDateRange()">Reset</button>
-            </div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
-                <button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button>
-            </div>
-        </div>
-        
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundToTwo(totalRevenue).toLocaleString()}</div></div>
-            <div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div>
-            <div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundToTwo(totalExpenses).toLocaleString()}</div></div>
-            <div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundToTwo(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div>
-            <div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div>
-            <div class="chart-container"><canvas id="profitChart" height="200"></canvas></div>
-        </div>
-        
-        ${filtered.length === 0 ? `
-        <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>
-        ` : `
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead>
-                    <tbody>
-                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead>
-                    <tbody>
-                        ${filteredExpenses.length === 0 ? '<td><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></table>`).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        `}`;
+        return `<div class="report-selector"><div class="date-range"><label>📅 From:</label><input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()"><label>To:</label><input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()"><button class="btn-edit" onclick="resetDateRange()">Reset</button></div><div style="display: flex; gap: 10px;"><button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button><button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button></div></div>
+        <div class="stats-grid"><div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundToTwo(totalRevenue).toLocaleString()}</div></div><div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div><div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundToTwo(totalExpenses).toLocaleString()}</div></div><div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundToTwo(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div></div>
+        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div><div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div></div>
+        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div><div class="chart-container"><canvas id="profitChart" height="200"></canvas></div></div>
+        ${filtered.length === 0 ? `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>` : `
+        <div class="card"><div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div></div>
+        <div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
     }
     
     function renderSales() {
-        const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${p.priceKg}/kg</option>`).join('');
+        const productOptions = inventory.map(p => `<option value="${p.id}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${p.priceKg}/kg</option>`).join('');
         const isClosed = currentDaySales.isClosed;
-        const statusText = isClosed ? '🔒 Closed' : '🟢 Open';
         
         return `<div class="sales-panel">
             <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${roundToTwo(currentDaySales.totalKg)} kg</div></div>
@@ -1205,7 +984,7 @@
             <div class="date-selector">
                 <label><i class="fas fa-calendar-alt"></i> Sale Date:</label>
                 <input type="date" id="salesDatePicker" value="${selectedSalesDate}" onchange="changeSalesDate()">
-                <span class="alert-info" style="margin:0; padding:5px 10px;">Status: ${statusText}</span>
+                <span class="alert-info" style="margin:0; padding:5px 10px;">Status: ${isClosed ? '🔒 Closed' : '🟢 Open'}</span>
                 ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is closed. Start a new day to record sales.</span>' : ''}
             </div>
             <div class="form-group">
@@ -1229,8 +1008,8 @@
                 <div class="calc-note"><i class="fas fa-calculator"></i> KG is automatically calculated from Cash + M-Pesa divided by product price</div>
             </div>
             <div class="action-buttons">
-                <button class="btn btn-success" onclick="updateDailySales()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-plus-circle"></i> Add Sale</button>
-                <button class="btn btn-warning" onclick="closeDay()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-lock"></i> Close Day</button>
+                <button class="btn btn-success" onclick="addSale()"><i class="fas fa-plus-circle"></i> Add Sale</button>
+                <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>
                 <button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button>
             </div>
         </div>
@@ -1246,138 +1025,33 @@
                             const productInfo = inventory.find(p => p.name === product);
                             const pricePerKg = productInfo?.priceKg || 0;
                             const revenue = kg * pricePerKg;
-                            return `<tr>
-                                <td style="padding:8px">${product}</td>
-                                <td style="padding:8px">${roundToTwo(kg).toFixed(2)} kg</td>
-                                <td style="padding:8px">KES ${roundToTwo(revenue).toLocaleString()} (${pricePerKg}/kg)</td>
-                                <td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td>
-                            </tr>`;
+                            return `<tr><td style="padding:8px">${product}</td><td style="padding:8px">${roundToTwo(kg).toFixed(2)} kg</td><td style="padding:8px">KES ${roundToTwo(revenue).toLocaleString()} (${pricePerKg}/kg)</td><td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td></tr>`;
                         }).join('')}
                     </tbody>
                 </table>
-                <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
         </div>
         ` : `<div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. Select a product and add sale above.</div>`}
         
-        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Change the date above to record sales for any day, past or present! All numbers are rounded to 2 decimal places for accuracy.</div>`;
+        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Change the date above to record sales for any day, past or present!</div>`;
     }
     
     function renderExpenses() {
         const today = new Date().toISOString().split('T')[0];
-        
-        return `<div class="card">
-            <div class="card-header"><h2>💰 Add Expense</h2></div>
-            <div class="form-group">
-                <label>Expense Category</label>
-                <input id="expCategory" placeholder="e.g., Transport, Utilities, Rent">
-            </div>
-            <div class="form-group">
-                <label>Amount (KES)</label>
-                <input id="expAmount" type="number" placeholder="Enter amount">
-            </div>
-            <div class="form-group">
-                <label>Date</label>
-                <input id="expenseDate" type="date" value="${today}">
-            </div>
-            <div class="form-group">
-                <label>Description (Optional)</label>
-                <textarea id="expDesc" placeholder="Additional details"></textarea>
-            </div>
-            <button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button>
-        </div>
-        <div class="card">
-            <div class="card-header"><h2>📋 Expense History</h2></div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead>
-                    <tbody>
-                        ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `
-                            <tr>
-                                <td style="padding:8px">${e.date}</td>
-                                <td style="padding:8px">${e.category}</td>
-                                <td style="padding:8px">KES ${e.amount.toLocaleString()}</td>
-                                <td style="padding:8px">${e.description || '-'}</td>
-                                <td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>`;
+        return `<div class="card"><div class="card-header"><h2>💰 Add Expense</h2></div><div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Date</label><input id="expenseDate" type="date" value="${today}"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button></div>
+        <div class="card"><div class="card-header"><h2>📋 Expense History</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th><tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div></div>`;
     }
     
     function renderInventory() {
-        return `<div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                    ${inventory.map(p => `
-                        <tr>
-                            <td style="padding:8px">${p.name}</td>
-                            <td style="padding:8px">${p.animal}</td>
-                            <td style="padding:8px">${roundToTwo(p.stockKg)}</td>
-                            <td style="padding:8px">KES ${p.priceKg}</td>
-                            <td style="padding:8px">KES ${p.costKg}</td>
-                            <td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td>
-                            <td style="padding:8px">
-                                <button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button>
-                                ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>`;
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${roundToTwo(p.stockKg)}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>`;
     }
     
     function renderUsers() {
-        return `<div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                    ${users.map(u => `
-                        <tr>
-                            <td style="padding:8px">${u.fullName}</td>
-                            <td style="padding:8px">${u.username}</td>
-                            <td class="password-cell" style="padding:8px">
-                                ${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'}
-                                ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}
-                            </td>
-                            <td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td>
-                            <td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td>
-                            <td style="padding:8px">${u.lastLogin || 'Never'}</td>
-                            <td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>`;
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>`;
     }
     
     function renderLogs() {
-        return `<div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr>
-                </thead>
-                <tbody>
-                    ${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `
-                        <tr>
-                            <td style="padding:8px">${l.timestamp}</td>
-                            <td style="padding:8px">${l.user}</td>
-                            <td style="padding:8px">${l.userRole}</td>
-                            <td style="padding:8px">${l.action}</td>
-                            <td style="padding:8px">${l.details}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>`;
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<td><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`;
     }
     
     async function renderApp() {
@@ -1416,7 +1090,6 @@
         app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
     }
     
-    // Initialize
     (async () => {
         const savedToken = localStorage.getItem('token');
         if (savedToken) {
