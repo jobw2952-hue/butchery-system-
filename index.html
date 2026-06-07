@@ -112,10 +112,10 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.6.0 📅 Sales Workflow</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.7.0 📅 Persistent Sales</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - PROPER SALES WORKFLOW ==========
+    // ========== BISMILAH BUTCHERY PRO - PERSISTENT SALES ==========
     
     function roundToTwo(num) {
         if (isNaN(num)) return 0;
@@ -183,8 +183,10 @@
         const salesData = await apiCall(`/api/sales-by-date?date=${date}`);
         if (salesData) {
             currentDaySales = salesData;
-            renderApp();
+            // Don't call renderApp here - let the caller handle it
+            return salesData;
         }
+        return null;
     }
     
     async function login(username, password) {
@@ -225,12 +227,13 @@
     function canDelete() { return isSuperAdmin(); }
     function setPage(page) { currentPage = page; renderApp(); }
     
-    // Date change handler
-    window.changeSalesDate = () => {
+    // Date change handler - KEEPS the selected date
+    window.changeSalesDate = async () => {
         const datePicker = document.getElementById('salesDatePicker');
         if (datePicker) {
             selectedSalesDate = datePicker.value;
-            loadSalesForDate(selectedSalesDate);
+            await loadSalesForDate(selectedSalesDate);
+            renderApp();
         }
     };
     
@@ -256,14 +259,14 @@
         autoCalculateKg();
     };
     
-    // ADD SALE
+    // ADD SALE - PERSISTENT
     window.addSale = async () => {
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
         let kg = parseFloat(document.getElementById('dailyKg')?.value);
         const cash = parseFloat(document.getElementById('dailyCash')?.value) || 0;
         const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value) || 0;
-        const saleDate = document.getElementById('salesDatePicker')?.value || new Date().toISOString().split('T')[0];
+        const saleDate = selectedSalesDate;
         
         kg = roundToTwo(kg);
         
@@ -295,10 +298,12 @@
         });
         
         if (result) {
+            // Reload the sales for the current date to show updated list
             await loadSalesForDate(saleDate);
             await loadAllData();
             renderApp();
             alert(`✅ Sold ${kg}kg of ${product.name} on ${saleDate}!`);
+            // Clear only the input fields, NOT the date
             document.getElementById('dailyKg').value = '';
             document.getElementById('dailyCash').value = '';
             document.getElementById('dailyMpesa').value = '';
@@ -400,7 +405,7 @@
         }).reduce((sum, e) => sum + e.amount, 0);
         const totalProfit = totalRevenue - totalExpenses;
         const printWindow = window.open('', '_blank');
-        printWindow.document.write(`<html><head><title>Butchery Sales Report</title><style>body{font-family:Arial,sans-serif;padding:20px;}h1{color:#1e293b;text-align:center;}.summary{display:flex;gap:20px;margin:20px 0;flex-wrap:wrap;}.summary-box{background:#f1f5f9;padding:15px;border-radius:8px;flex:1;text-align:center;}.summary-box .value{font-size:24px;font-weight:bold;color:#3b82f6;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f8fafc;}.profit{color:#10b981;}.loss{color:#ef4444;}</style></head><body><h1>Bismillah Butchery Pro - Sales Report</h1><p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p><div class="summary"><div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div><div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div><div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div><div class="summary-box ${totalProfit >= 0 ? 'profit' : 'loss'}"><h3>Total Profit</h3><div class="value">KES ${totalProfit.toLocaleString()}</div></div></div><table><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead><tbody>${filtered.map(r => `<tr><td>${r.date}</td><td>${roundToTwo(r.totalKg)}</td><td>KES ${r.cashAmount.toLocaleString()}</td><td>KES ${r.mpesaAmount.toLocaleString()}</td><td>KES ${r.totalRevenue.toLocaleString()}</td><td>${r.closedBy}</td></tr>`).join('')}</tbody></table><p style="margin-top:20px;text-align:center;">Generated on ${new Date().toLocaleString()}</p><button onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;">Print / Save as PDF</button></body></html>`);
+        printWindow.document.write(`<html><head><title>Butchery Sales Report</title><style>body{font-family:Arial,sans-serif;padding:20px;}h1{color:#1e293b;text-align:center;}.summary{display:flex;gap:20px;margin:20px 0;flex-wrap:wrap;}.summary-box{background:#f1f5f9;padding:15px;border-radius:8px;flex:1;text-align:center;}.summary-box .value{font-size:24px;font-weight:bold;color:#3b82f6;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f8fafc;}.profit{color:#10b981;}.loss{color:#ef4444;}</style></head><body><h1>Bismillah Butchery Pro - Sales Report</h1><p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p><div class="summary"><div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div><div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div><div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div><div class="summary-box ${totalProfit >= 0 ? 'profit' : 'loss'}"><h3>Total Profit</h3><div class="value">KES ${totalProfit.toLocaleString()}</div></div></div><table><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}</tbody></table><p style="margin-top:20px;text-align:center;">Generated on ${new Date().toLocaleString()}</p><button onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;">Print / Save as PDF</button></body></html>`);
         printWindow.document.close();
     };
     
@@ -597,7 +602,7 @@
         else { alert('Username already exists!'); }
     };
     
-    window.showVersionInfo = () => { alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.6.0 (Proper Sales Workflow)\n\nWorkflow: Select Date → Add Sales → View Sales → Close Day\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`); };
+    window.showVersionInfo = () => { alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.7.0 (Persistent Sales)\n\nNow sales stay visible after adding!\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`); };
     
     function renderDashboard() {
         const totalInventoryValue = inventory.reduce((sum, i) => sum + (i.stockKg * i.costKg), 0);
@@ -637,7 +642,7 @@
                 profitChart = new Chart(profitCtx, { type: 'bar', data: { labels: chartLabels, datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }] }, options: { responsive: true } });
             }
         }, 100);
-        return `<div class="report-selector"><div class="date-range"><label>📅 From:</label><input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()"><label>To:</label><input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()"><button class="btn-edit" onclick="resetDateRange()">Reset</button></div><div style="display: flex; gap: 10px;"><button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button><button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button></div></div><div class="stats-grid"><div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundToTwo(totalRevenue).toLocaleString()}</div></div><div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div><div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundToTwo(totalExpenses).toLocaleString()}</div></div><div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundToTwo(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div><div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div><div class="chart-container"><canvas id="profitChart" height="200"></canvas></div></div>${filtered.length === 0 ? `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>` : `<div class="card"><div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div></div><div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
+        return `<div class="report-selector"><div class="date-range"><label>📅 From:</label><input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()"><label>To:</label><input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()"><button class="btn-edit" onclick="resetDateRange()">Reset</button></div><div style="display: flex; gap: 10px;"><button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button><button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button></div></div><div class="stats-grid"><div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundToTwo(totalRevenue).toLocaleString()}</div></div><div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div><div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundToTwo(totalExpenses).toLocaleString()}</div></div><div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundToTwo(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div><div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div><div class="chart-container"><canvas id="profitChart" height="200"></canvas></div></div>${filtered.length === 0 ? `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>` : `<div class="card"><div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</table></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div></div><div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<td><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
     }
     
     function renderSales() {
@@ -691,7 +696,7 @@
         ` : ''}
         
         ${salesList ? `
-        <div class="card">
+        <div class="card sales-list">
             <div class="card-header"><h2>📊 Sales for ${selectedSalesDate}</h2></div>
             <div class="table-container">
                 <table class="data-table">
@@ -704,7 +709,7 @@
                             return `<tr><td style="padding:8px">${product}</td><td style="padding:8px">${roundToTwo(kg).toFixed(2)} kg</td><td style="padding:8px">KES ${roundToTwo(revenue).toLocaleString()} (${pricePerKg}/kg)</td><td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td></tr>`;
                         }).join('')}
                     </tbody>
-                <tr>
+                </table>
                 <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
         </div>
@@ -729,7 +734,7 @@
     function renderExpenses() {
         const today = new Date().toISOString().split('T')[0];
         return `<div class="card"><div class="card-header"><h2>💰 Add Expense</h2></div><div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Date</label><input id="expenseDate" type="date" value="${today}"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button></div>
-        <div class="card"><div class="card-header"><h2>📋 Expense History</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '</td><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div></div>`;
+        <div class="card"><div class="card-header"><h2>📋 Expense History</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td></tr>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div></div>`;
     }
     
     function renderInventory() {
@@ -741,7 +746,7 @@
     }
     
     function renderLogs() {
-        return `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`;
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet<li>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}<tr><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`;
     }
     
     async function renderApp() {
