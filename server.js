@@ -46,23 +46,15 @@ function addActivityLog(userName, userRole, action, details) {
         'System Reset', 'Delete Record', 'Delete Sale'
     ];
     
-    if (!importantActions.includes(action)) {
-        return;
-    }
+    if (!importantActions.includes(action)) return;
     
     const timestamp = getLocalTimestamp();
-    
     db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
-        [timestamp, userName, userRole, action, details],
-        (err) => {
-            if (err) console.error('Error adding activity log:', err);
-        });
-    
-    // Clean up old logs (keep only last 500 records)
+        [timestamp, userName, userRole, action, details]);
     db.run(`DELETE FROM activity_logs WHERE id NOT IN (SELECT id FROM activity_logs ORDER BY id DESC LIMIT 500)`);
 }
 
-// Initialize database tables
+// Initialize database
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,7 +116,6 @@ db.serialize(() => {
         details TEXT
     )`);
     
-    // Insert default users if not exists
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync('admin123', salt);
     
@@ -146,7 +137,6 @@ db.serialize(() => {
         }
     });
     
-    // Insert default inventory if empty
     db.get("SELECT COUNT(*) as count FROM inventory", (err, row) => {
         if (row && row.count === 0) {
             const defaultInventory = [
@@ -163,7 +153,6 @@ db.serialize(() => {
         }
     });
     
-    // Initialize current day sales for today
     const today = new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [today], (err, row) => {
         if (!row) {
@@ -177,57 +166,28 @@ db.serialize(() => {
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) {
-        return res.status(401).json({ error: 'Access denied. No token provided.' });
-    }
-    
+    if (!token) return res.status(401).json({ error: 'Access denied' });
     jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) {
-            return res.status(403).json({ error: 'Invalid or expired token.' });
-        }
+        if (err) return res.status(403).json({ error: 'Invalid token' });
         req.user = user;
         next();
     });
 }
 
-// Login endpoint
+// ========== LOGIN ==========
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     console.log(`Login attempt: ${username}`);
     
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password required' });
-    }
-    
     db.get("SELECT * FROM users WHERE username = ? AND isActive = 1", [username], (err, user) => {
-        if (err) {
-            console.error('Database error:', err);
-            return res.status(500).json({ error: 'Server error' });
-        }
+        if (err || !user) return res.status(401).json({ error: 'Invalid credentials' });
+        if (!bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid credentials' });
         
-        if (!user) {
-            console.log(`User not found: ${username}`);
-            return res.status(401).json({ error: 'Invalid username or password' });
-        }
-        
-        const validPassword = bcrypt.compareSync(password, user.password);
-        if (!validPassword) {
-            console.log(`Invalid password for: ${username}`);
-            return res.status(401).json({ error: 'Invalid username or password' });
-        }
-        
-        // Update last login
         db.run("UPDATE users SET lastLogin = ? WHERE id = ?", [getLocalTimestamp(), user.id]);
-        
-        const token = jwt.sign(
-            { id: user.id, username: user.username, role: user.role, fullName: user.fullName }, 
-            SECRET_KEY, 
-            { expiresIn: '24h' }
-        );
-        
-        console.log(`✅ Login successful: ${username} (${user.role})`);
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.fullName }, SECRET_KEY, { expiresIn: '24h' });
         
         addActivityLog(user.fullName, user.role, 'Login', `${user.fullName} logged in`);
+        console.log(`✅ Login successful: ${username} (${user.role})`);
         
         res.json({
             success: true,
@@ -244,22 +204,17 @@ app.post('/api/login', (req, res) => {
     });
 });
 
-// Get current user
 app.get('/api/me', authenticateToken, (req, res) => {
     db.get("SELECT id, username, role, fullName, email, phone FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        if (err || !user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        if (err || !user) return res.status(404).json({ error: 'User not found' });
         res.json(user);
     });
 });
 
-// Get inventory
+// ========== INVENTORY ==========
 app.get('/api/inventory', authenticateToken, (req, res) => {
     db.all("SELECT * FROM inventory ORDER BY id", (err, inventory) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+        if (err) return res.status(500).json({ error: err.message });
         const roundedInventory = inventory.map(i => ({
             ...i,
             stockKg: roundToTwo(i.stockKg),
@@ -270,91 +225,55 @@ app.get('/api/inventory', authenticateToken, (req, res) => {
     });
 });
 
-// Add inventory (super admin only)
 app.post('/api/inventory', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     const { name, animal, stockKg, priceKg, costKg, lowStockAlert } = req.body;
-    const roundedStockKg = roundToTwo(stockKg);
-    const roundedPriceKg = roundToTwo(priceKg);
-    const roundedCostKg = roundToTwo(costKg || priceKg * 0.7);
-    
     db.run(`INSERT INTO inventory (name, animal, stockKg, priceKg, costKg, lowStockAlert) VALUES (?, ?, ?, ?, ?, ?)`,
-        [name, animal, roundedStockKg, roundedPriceKg, roundedCostKg, lowStockAlert || 10],
+        [name, animal, roundToTwo(stockKg), roundToTwo(priceKg), roundToTwo(costKg || priceKg * 0.7), lowStockAlert || 10],
         function(err) {
-            if (err) {
-                return res.status(400).json({ error: 'Failed to add product' });
-            }
-            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-                const userName = user ? user.fullName : req.user.username;
-                addActivityLog(userName, req.user.role, 'Add Product', `Added product: ${name}`);
-            });
+            if (err) return res.status(400).json({ error: 'Failed to add product' });
+            addActivityLog(req.user.fullName, req.user.role, 'Add Product', `Added product: ${name}`);
             res.json({ id: this.lastID, message: 'Product added' });
         });
 });
 
-// Update inventory
+// UPDATE INVENTORY - ALLOWS BOTH SUPER_ADMIN AND ADMIN
 app.put('/api/inventory/:id', authenticateToken, (req, res) => {
+    // Allow both Super Admin AND Admin to edit inventory
     if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Permission denied' });
+        return res.status(403).json({ error: 'Permission denied. Only Super Admin and Admin can edit inventory.' });
     }
     const { name, animal, stockKg, priceKg, costKg, lowStockAlert } = req.body;
-    const roundedStockKg = roundToTwo(stockKg);
-    const roundedPriceKg = roundToTwo(priceKg);
-    const roundedCostKg = roundToTwo(costKg);
-    
     db.run(`UPDATE inventory SET name = ?, animal = ?, stockKg = ?, priceKg = ?, costKg = ?, lowStockAlert = ? WHERE id = ?`,
-        [name, animal, roundedStockKg, roundedPriceKg, roundedCostKg, lowStockAlert, req.params.id],
+        [name, animal, roundToTwo(stockKg), roundToTwo(priceKg), roundToTwo(costKg), lowStockAlert, req.params.id],
         (err) => {
-            if (err) {
-                return res.status(400).json({ error: 'Update failed' });
-            }
-            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-                const userName = user ? user.fullName : req.user.username;
-                addActivityLog(userName, req.user.role, 'Edit Inventory', `Edited ${name} - Stock: ${roundedStockKg}kg, Price: ${roundedPriceKg}`);
-            });
+            if (err) return res.status(400).json({ error: 'Update failed' });
+            addActivityLog(req.user.fullName, req.user.role, 'Edit Inventory', `Edited ${name} - Stock: ${roundToTwo(stockKg)}kg`);
             res.json({ message: 'Product updated' });
         });
 });
 
-// Delete inventory (super admin only)
 app.delete('/api/inventory/:id', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.get("SELECT name FROM inventory WHERE id = ?", [req.params.id], (err, product) => {
         const productName = product ? product.name : 'Unknown';
         db.run("DELETE FROM inventory WHERE id = ?", [req.params.id], (err) => {
-            if (err) {
-                return res.status(400).json({ error: 'Delete failed' });
-            }
-            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-                const userName = user ? user.fullName : req.user.username;
-                addActivityLog(userName, req.user.role, 'Delete Product', `Deleted product: ${productName}`);
-            });
+            addActivityLog(req.user.fullName, req.user.role, 'Delete Product', `Deleted product: ${productName}`);
             res.json({ message: 'Product deleted' });
         });
     });
 });
 
-// Get sales by specific date
+// ========== SALES (NO ROLE RESTRICTIONS - BOTH ADMIN AND SUPER ADMIN CAN USE) ==========
 app.get('/api/sales-by-date', authenticateToken, (req, res) => {
     const date = req.query.date || new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [date], (err, sales) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
         if (!sales) {
             db.run("INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')", [date]);
             res.json({ date: date, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} });
         } else {
             let salesByProduct = {};
-            try {
-                salesByProduct = JSON.parse(sales.salesByProduct || '{}');
-            } catch(e) {
-                salesByProduct = {};
-            }
+            try { salesByProduct = JSON.parse(sales.salesByProduct || '{}'); } catch(e) {}
             res.json({ 
                 ...sales, 
                 isClosed: sales.isClosed === 1,
@@ -367,23 +286,15 @@ app.get('/api/sales-by-date', authenticateToken, (req, res) => {
     });
 });
 
-// Get current sales (default - today)
 app.get('/api/current-sales', authenticateToken, (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [today], (err, sales) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
         if (!sales) {
             db.run("INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')", [today]);
             res.json({ date: today, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} });
         } else {
             let salesByProduct = {};
-            try {
-                salesByProduct = JSON.parse(sales.salesByProduct || '{}');
-            } catch(e) {
-                salesByProduct = {};
-            }
+            try { salesByProduct = JSON.parse(sales.salesByProduct || '{}'); } catch(e) {}
             res.json({ 
                 ...sales, 
                 isClosed: sales.isClosed === 1,
@@ -396,175 +307,95 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
     });
 });
 
-// Update current sales with date support
+// ADD SALE - NO ROLE RESTRICTION
 app.post('/api/current-sales', authenticateToken, (req, res) => {
     let { kg, cash, mpesa, productId, productName, date } = req.body;
-    
-    // Round all values
     kg = roundToTwo(kg);
     cash = roundToTwo(cash);
     mpesa = roundToTwo(mpesa);
     const saleDate = date || new Date().toISOString().split('T')[0];
     
-    // First check if day is closed
     db.get("SELECT isClosed FROM current_day_sales WHERE date = ?", [saleDate], (err, dayStatus) => {
-        if (dayStatus && dayStatus.isClosed === 1) {
-            return res.status(400).json({ error: 'This day is already closed. Cannot add sales.' });
-        }
+        if (dayStatus && dayStatus.isClosed === 1) return res.status(400).json({ error: 'This day is already closed' });
         
         db.get("SELECT salesByProduct, totalKg, cashAmount, mpesaAmount FROM current_day_sales WHERE date = ?", [saleDate], (err, current) => {
             let salesByProduct = {};
-            let currentTotalKg = 0;
-            let currentCash = 0;
-            let currentMpesa = 0;
-            
+            let currentTotalKg = 0, currentCash = 0, currentMpesa = 0;
             if (current) {
-                try {
-                    salesByProduct = JSON.parse(current.salesByProduct || '{}');
-                } catch(e) {}
+                try { salesByProduct = JSON.parse(current.salesByProduct || '{}'); } catch(e) {}
                 currentTotalKg = current.totalKg || 0;
                 currentCash = current.cashAmount || 0;
                 currentMpesa = current.mpesaAmount || 0;
             }
+            if (productName) salesByProduct[productName] = roundToTwo((salesByProduct[productName] || 0) + kg);
             
-            if (productName) {
-                const existingKg = salesByProduct[productName] || 0;
-                salesByProduct[productName] = roundToTwo(existingKg + kg);
-            }
-            
-            const salesByProductStr = JSON.stringify(salesByProduct);
-            const newTotalKg = roundToTwo(currentTotalKg + kg);
-            const newCash = roundToTwo(currentCash + cash);
-            const newMpesa = roundToTwo(currentMpesa + mpesa);
-            
-            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-                const userName = user ? user.fullName : req.user.username;
-                
-                db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, ?, ?, ?, 0, ?)`,
-                    [saleDate, newTotalKg, newCash, newMpesa, salesByProductStr], (err) => {
-                        if (err) {
-                            console.error('Database error:', err);
-                            return res.status(400).json({ error: 'Update failed' });
-                        }
-                        
-                        // Update inventory stock
-                        if (productId && productName) {
-                            db.run(`UPDATE inventory SET stockKg = round(stockKg - ?, 2) WHERE id = ?`, [kg, productId]);
-                        }
-                        
-                        addActivityLog(userName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName || 'product'} on ${saleDate}, Cash: ${cash}, M-Pesa: ${mpesa}`);
-                        res.json({ message: 'Sales updated' });
-                    });
-            });
-        });
-    });
-});
-
-// Close day with date support
-app.post('/api/close-day', authenticateToken, (req, res) => {
-    const date = req.body.date || new Date().toISOString().split('T')[0];
-    
-    db.get("SELECT * FROM current_day_sales WHERE date = ? AND isClosed = 0", [date], (err, sales) => {
-        if (err || !sales) {
-            return res.status(400).json({ error: 'No active day or already closed' });
-        }
-        
-        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-            const userName = user ? user.fullName : req.user.username;
-            const total = roundToTwo((sales.cashAmount || 0) + (sales.mpesaAmount || 0));
-            
-            db.run(`INSERT INTO daily_closings (date, totalKg, cashAmount, mpesaAmount, totalRevenue, closedBy) VALUES (?, ?, ?, ?, ?, ?)`,
-                [date, roundToTwo(sales.totalKg || 0), roundToTwo(sales.cashAmount || 0), roundToTwo(sales.mpesaAmount || 0), total, userName], (err) => {
-                    if (err) {
-                        console.error('Error closing day:', err);
-                        return res.status(400).json({ error: 'Failed to close day' });
+            db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, ?, ?, ?, 0, ?)`,
+                [saleDate, roundToTwo(currentTotalKg + kg), roundToTwo(currentCash + cash), roundToTwo(currentMpesa + mpesa), JSON.stringify(salesByProduct)], (err) => {
+                    if (err) return res.status(400).json({ error: 'Update failed' });
+                    if (productId && productName) {
+                        db.run(`UPDATE inventory SET stockKg = round(stockKg - ?, 2) WHERE id = ?`, [kg, productId]);
                     }
-                    db.run("UPDATE current_day_sales SET isClosed = 1 WHERE date = ?", [date]);
-                    addActivityLog(userName, req.user.role, 'Day Closing', `Closed day ${date} with KES ${total}`);
-                    res.json({ message: 'Day closed' });
+                    addActivityLog(req.user.fullName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName} on ${saleDate}, Cash: ${cash}, M-Pesa: ${mpesa}`);
+                    res.json({ message: 'Sales updated' });
                 });
         });
     });
 });
 
-// Start new day with date support
+// CLOSE DAY - NO ROLE RESTRICTION
+app.post('/api/close-day', authenticateToken, (req, res) => {
+    const date = req.body.date || new Date().toISOString().split('T')[0];
+    db.get("SELECT * FROM current_day_sales WHERE date = ? AND isClosed = 0", [date], (err, sales) => {
+        if (err || !sales) return res.status(400).json({ error: 'No active day to close' });
+        const total = roundToTwo((sales.cashAmount || 0) + (sales.mpesaAmount || 0));
+        db.run(`INSERT INTO daily_closings (date, totalKg, cashAmount, mpesaAmount, totalRevenue, closedBy) VALUES (?, ?, ?, ?, ?, ?)`,
+            [date, roundToTwo(sales.totalKg || 0), roundToTwo(sales.cashAmount || 0), roundToTwo(sales.mpesaAmount || 0), total, req.user.fullName], (err) => {
+                if (err) return res.status(400).json({ error: 'Failed to close day' });
+                db.run("UPDATE current_day_sales SET isClosed = 1 WHERE date = ?", [date]);
+                addActivityLog(req.user.fullName, req.user.role, 'Day Closing', `Closed day ${date} with KES ${total}`);
+                res.json({ message: 'Day closed' });
+            });
+    });
+});
+
+// START NEW DAY - NO ROLE RESTRICTION
 app.post('/api/new-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
-    
-    // Insert or replace with fresh data
     db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [date]);
-    
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
-        addActivityLog(userName, req.user.role, 'New Day', `Started new day for ${date}`);
-    });
-    
+    addActivityLog(req.user.fullName, req.user.role, 'New Day', `Started new day for ${date}`);
     res.json({ message: 'New day started', date: date });
 });
 
-// Delete sale entry with date support
+// DELETE SALE - NO ROLE RESTRICTION
 app.post('/api/delete-sale', authenticateToken, (req, res) => {
     const { productName, kg, date } = req.body;
     const saleDate = date || new Date().toISOString().split('T')[0];
     const roundedKg = roundToTwo(kg);
     
-    if (!productName || !roundedKg) {
-        return res.status(400).json({ error: 'Product name and quantity required' });
-    }
-    
     db.get("SELECT salesByProduct, totalKg FROM current_day_sales WHERE date = ? AND isClosed = 0", [saleDate], (err, current) => {
-        if (err || !current) {
-            return res.status(400).json({ error: 'No active day or sale not found' });
-        }
-        
+        if (err || !current) return res.status(400).json({ error: 'No active day' });
         let salesByProduct = {};
-        try {
-            salesByProduct = JSON.parse(current.salesByProduct || '{}');
-        } catch(e) {}
+        try { salesByProduct = JSON.parse(current.salesByProduct || '{}'); } catch(e) {}
+        if (!salesByProduct[productName]) return res.status(400).json({ error: 'Sale entry not found' });
         
-        if (!salesByProduct[productName]) {
-            return res.status(400).json({ error: 'Sale entry not found' });
-        }
+        const newKg = roundToTwo(salesByProduct[productName] - roundedKg);
+        if (newKg <= 0.01) delete salesByProduct[productName];
+        else salesByProduct[productName] = newKg;
         
-        const currentKg = salesByProduct[productName];
-        const newKg = roundToTwo(currentKg - roundedKg);
-        
-        if (newKg <= 0.01) {
-            delete salesByProduct[productName];
-        } else {
-            salesByProduct[productName] = newKg;
-        }
-        
-        const salesByProductStr = JSON.stringify(salesByProduct);
-        const newTotalKg = roundToTwo((current.totalKg || 0) - roundedKg);
-        
-        db.run(`UPDATE current_day_sales SET 
-            totalKg = ?, 
-            salesByProduct = ? 
-            WHERE date = ? AND isClosed = 0`,
-            [newTotalKg, salesByProductStr, saleDate], (err) => {
-                if (err) {
-                    return res.status(400).json({ error: 'Failed to update sales' });
-                }
-                
+        db.run(`UPDATE current_day_sales SET totalKg = round(totalKg - ?, 2), salesByProduct = ? WHERE date = ? AND isClosed = 0`,
+            [roundedKg, JSON.stringify(salesByProduct), saleDate], (err) => {
+                if (err) return res.status(400).json({ error: 'Failed to update' });
                 db.run(`UPDATE inventory SET stockKg = round(stockKg + ?, 2) WHERE name = ?`, [roundedKg, productName]);
-                
-                db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-                    const userName = user ? user.fullName : req.user.username;
-                    addActivityLog(userName, req.user.role, 'Delete Sale', `Deleted ${roundedKg}kg of ${productName} from ${saleDate} and restored stock`);
-                });
-                
-                res.json({ message: 'Sale entry deleted and stock restored' });
+                addActivityLog(req.user.fullName, req.user.role, 'Delete Sale', `Deleted ${roundedKg}kg of ${productName}`);
+                res.json({ message: 'Sale entry deleted' });
             });
     });
 });
 
-// Get closings
+// ========== CLOSINGS ==========
 app.get('/api/closings', authenticateToken, (req, res) => {
     db.all("SELECT * FROM daily_closings ORDER BY date DESC", (err, closings) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+        if (err) return res.status(500).json({ error: err.message });
         const roundedClosings = closings.map(c => ({
             ...c,
             totalKg: roundToTwo(c.totalKg),
@@ -576,166 +407,105 @@ app.get('/api/closings', authenticateToken, (req, res) => {
     });
 });
 
-// Delete closing (super admin only)
 app.delete('/api/closings/:id', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.run("DELETE FROM daily_closings WHERE id = ?", [req.params.id]);
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
-        addActivityLog(userName, req.user.role, 'Delete Record', 'Deleted closing record');
-    });
+    addActivityLog(req.user.fullName, req.user.role, 'Delete Record', 'Deleted closing record');
     res.json({ message: 'Deleted' });
 });
 
-// Get expenses
+// ========== EXPENSES ==========
 app.get('/api/expenses', authenticateToken, (req, res) => {
     db.all("SELECT * FROM expenses ORDER BY date DESC", (err, expenses) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        const roundedExpenses = expenses.map(e => ({
-            ...e,
-            amount: roundToTwo(e.amount)
-        }));
+        if (err) return res.status(500).json({ error: err.message });
+        const roundedExpenses = expenses.map(e => ({ ...e, amount: roundToTwo(e.amount) }));
         res.json(roundedExpenses || []);
     });
 });
 
-// Add expense with custom date
 app.post('/api/expenses', authenticateToken, (req, res) => {
     const { category, amount, description, date } = req.body;
     const expenseDate = date || new Date().toISOString().split('T')[0];
-    const roundedAmount = roundToTwo(amount);
-    
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
-        
-        db.run(`INSERT INTO expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
-            [expenseDate, category, roundedAmount, description || ''], function(err) {
-                if (err) {
-                    return res.status(400).json({ error: 'Failed to add expense' });
-                }
-                addActivityLog(userName, req.user.role, 'Expense Added', `${category}: KES ${roundedAmount} on ${expenseDate}`);
-                res.json({ id: this.lastID, message: 'Expense added' });
-            });
-    });
+    db.run(`INSERT INTO expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
+        [expenseDate, category, roundToTwo(amount), description || ''], function(err) {
+            if (err) return res.status(400).json({ error: 'Failed to add expense' });
+            addActivityLog(req.user.fullName, req.user.role, 'Expense Added', `${category}: KES ${roundToTwo(amount)} on ${expenseDate}`);
+            res.json({ id: this.lastID, message: 'Expense added' });
+        });
 });
 
-// Delete expense (super admin only)
 app.delete('/api/expenses/:id', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.run("DELETE FROM expenses WHERE id = ?", [req.params.id]);
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
-        addActivityLog(userName, req.user.role, 'Delete Expense', 'Deleted expense record');
-    });
+    addActivityLog(req.user.fullName, req.user.role, 'Delete Expense', 'Deleted expense record');
     res.json({ message: 'Deleted' });
 });
 
-// Get users (super admin only)
+// ========== USERS (SUPER ADMIN ONLY) ==========
 app.get('/api/users', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.all("SELECT id, username, role, fullName, email, phone, isActive, createdAt, lastLogin FROM users", (err, users) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+        if (err) return res.status(500).json({ error: err.message });
         res.json(users || []);
     });
 });
 
-// Create user (super admin only)
 app.post('/api/users', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     const { username, password, role, fullName, email, phone } = req.body;
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync(password, 10);
-    
     db.run(`INSERT INTO users (username, password, role, fullName, email, phone, isActive, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [username, hashedPassword, role || 'admin', fullName, email || '', phone || '', 1, getLocalTimestamp()],
         function(err) {
-            if (err) {
-                return res.status(400).json({ error: 'Username already exists' });
-            }
-            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-                const userName = user ? user.fullName : req.user.username;
-                addActivityLog(userName, req.user.role, 'Create User', `Created user: ${username} (${fullName})`);
-            });
+            if (err) return res.status(400).json({ error: 'Username already exists' });
+            addActivityLog(req.user.fullName, req.user.role, 'Create User', `Created user: ${username} (${fullName})`);
             res.json({ id: this.lastID, message: 'User created' });
         });
 });
 
-// Update user
 app.put('/api/users/:id', authenticateToken, (req, res) => {
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     const { fullName, email, phone, password, isActive } = req.body;
-    
-    db.get("SELECT username FROM users WHERE id = ?", [req.params.id], (err, user) => {
-        if (user && user.username === 'superadmin' && req.user.role !== 'super_admin') {
-            return res.status(403).json({ error: 'Cannot modify super admin' });
-        }
-        
-        let query = "UPDATE users SET fullName = ?, email = ?, phone = ?";
-        let params = [fullName, email || '', phone || ''];
-        
-        if (password) {
-            const salt = bcrypt.genSaltSync(10);
-            const hashedPassword = bcrypt.hashSync(password, 10);
-            query += ", password = ?";
-            params.push(hashedPassword);
-        }
-        if (isActive !== undefined && req.user.role === 'super_admin') {
-            query += ", isActive = ?";
-            params.push(isActive ? 1 : 0);
-        }
-        query += " WHERE id = ?";
-        params.push(req.params.id);
-        
-        db.run(query, params);
-        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, adminUser) => {
-            const adminName = adminUser ? adminUser.fullName : req.user.username;
-            addActivityLog(adminName, req.user.role, 'Update User', `Updated user: ${user?.username || 'Unknown'}`);
-        });
-        res.json({ message: 'User updated' });
-    });
+    let query = "UPDATE users SET fullName = ?, email = ?, phone = ?";
+    let params = [fullName, email || '', phone || ''];
+    if (password) {
+        const salt = bcrypt.genSaltSync(10);
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        query += ", password = ?";
+        params.push(hashedPassword);
+    }
+    if (isActive !== undefined) {
+        query += ", isActive = ?";
+        params.push(isActive ? 1 : 0);
+    }
+    query += " WHERE id = ?";
+    params.push(req.params.id);
+    db.run(query, params);
+    addActivityLog(req.user.fullName, req.user.role, 'Update User', `Updated user ID: ${req.params.id}`);
+    res.json({ message: 'User updated' });
 });
 
-// Delete user (super admin only)
 app.delete('/api/users/:id', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.get("SELECT username FROM users WHERE id = ?", [req.params.id], (err, user) => {
         const deletedUser = user ? user.username : 'Unknown';
         db.run("DELETE FROM users WHERE id = ? AND username NOT IN ('superadmin', 'admin1')", [req.params.id]);
-        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, adminUser) => {
-            const adminName = adminUser ? adminUser.fullName : req.user.username;
-            addActivityLog(adminName, req.user.role, 'Delete User', `Deleted user: ${deletedUser}`);
-        });
+        addActivityLog(req.user.fullName, req.user.role, 'Delete User', `Deleted user: ${deletedUser}`);
+        res.json({ message: 'User deleted' });
     });
-    res.json({ message: 'User deleted' });
 });
 
-// Get logs (super admin only)
+// ========== LOGS (SUPER ADMIN ONLY) ==========
 app.get('/api/logs', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.all("SELECT * FROM activity_logs ORDER BY id DESC LIMIT 200", (err, logs) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+        if (err) return res.status(500).json({ error: err.message });
         res.json(logs || []);
     });
 });
 
-// Dashboard stats
+// ========== DASHBOARD STATS ==========
 app.get('/api/dashboard-stats', authenticateToken, (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const sevenDaysAgo = new Date();
@@ -761,34 +531,19 @@ app.get('/api/dashboard-stats', authenticateToken, (req, res) => {
     });
 });
 
-// Reset all data
+// ========== RESET ALL DATA (SUPER ADMIN ONLY) ==========
 app.post('/api/reset-all', authenticateToken, (req, res) => {
-    if (req.user.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Permission denied' });
-    }
-    
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     const today = new Date().toISOString().split('T')[0];
-    
-    db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-        const userName = user ? user.fullName : req.user.username;
-        
-        db.serialize(() => {
-            db.run("DELETE FROM daily_closings");
-            db.run("DELETE FROM expenses");
-            db.run("DELETE FROM activity_logs");
-            db.run("DELETE FROM current_day_sales");
-            db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
-            db.run("UPDATE inventory SET stockKg = 0", (err) => {
-                if (err) {
-                    console.error('Error resetting inventory:', err);
-                } else {
-                    console.log('✅ Inventory stock set to 0 for all products');
-                }
-            });
-            addActivityLog(userName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0, products preserved');
-            console.log('✅ All data reset to zero by:', userName);
-            res.json({ message: 'All data has been reset to zero. Stock quantities are now 0. Products preserved.' });
-        });
+    db.serialize(() => {
+        db.run("DELETE FROM daily_closings");
+        db.run("DELETE FROM expenses");
+        db.run("DELETE FROM activity_logs");
+        db.run("DELETE FROM current_day_sales");
+        db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
+        db.run("UPDATE inventory SET stockKg = 0");
+        addActivityLog(req.user.fullName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0');
+        res.json({ message: 'All data has been reset to zero. Stock quantities are now 0.' });
     });
 });
 
@@ -803,7 +558,6 @@ app.listen(PORT, () => {
     console.log('🚀 Bismillah Butchery Pro Server Running!');
     console.log('========================================');
     console.log(`📡 Server: http://localhost:${PORT}`);
-    console.log(`📝 Login: superadmin / admin123`);
-    console.log(`👤 Admin: admin1 / admin123`);
+    console.log(`📝 Login: superadmin / admin123 | admin1 / admin123`);
     console.log('========================================\n');
 });
