@@ -16,13 +16,11 @@ app.use(express.static('public'));
 // Create database connection
 const db = new sqlite3.Database('./butchery.db');
 
-// Helper function to round to 2 decimal places
 function roundToTwo(num) {
     if (isNaN(num)) return 0;
     return Math.round(num * 100) / 100;
 }
 
-// Helper function to get correct local time
 function getLocalTimestamp() {
     const now = new Date();
     return now.toLocaleString('en-US', {
@@ -37,21 +35,10 @@ function getLocalTimestamp() {
     });
 }
 
-// Helper function to add activity log
 function addActivityLog(userName, userRole, action, details) {
-    const importantActions = [
-        'Login', 'Logout', 'Sales Update', 'Day Closing', 'New Day',
-        'Edit Inventory', 'Add Product', 'Delete Product', 'Expense Added',
-        'Delete Expense', 'Create User', 'Delete User', 'Update User',
-        'System Reset', 'Delete Record', 'Delete Sale'
-    ];
-    
-    if (!importantActions.includes(action)) return;
-    
     const timestamp = getLocalTimestamp();
     db.run(`INSERT INTO activity_logs (timestamp, user, userRole, action, details) VALUES (?, ?, ?, ?, ?)`,
         [timestamp, userName, userRole, action, details]);
-    db.run(`DELETE FROM activity_logs WHERE id NOT IN (SELECT id FROM activity_logs ORDER BY id DESC LIMIT 500)`);
 }
 
 // Initialize database
@@ -162,7 +149,6 @@ db.serialize(() => {
     });
 });
 
-// Authentication middleware
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -177,17 +163,23 @@ function authenticateToken(req, res, next) {
 // ========== LOGIN ==========
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
-    console.log(`Login attempt: ${username}`);
+    console.log(`[LOGIN] Attempt: ${username}`);
     
     db.get("SELECT * FROM users WHERE username = ? AND isActive = 1", [username], (err, user) => {
-        if (err || !user) return res.status(401).json({ error: 'Invalid credentials' });
-        if (!bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid credentials' });
+        if (err || !user) {
+            console.log(`[LOGIN] User not found: ${username}`);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        if (!bcrypt.compareSync(password, user.password)) {
+            console.log(`[LOGIN] Invalid password for: ${username}`);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
         
         db.run("UPDATE users SET lastLogin = ? WHERE id = ?", [getLocalTimestamp(), user.id]);
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.fullName }, SECRET_KEY, { expiresIn: '24h' });
         
+        console.log(`[LOGIN] Success: ${username} (${user.role})`);
         addActivityLog(user.fullName, user.role, 'Login', `${user.fullName} logged in`);
-        console.log(`✅ Login successful: ${username} (${user.role})`);
         
         res.json({
             success: true,
@@ -215,13 +207,7 @@ app.get('/api/me', authenticateToken, (req, res) => {
 app.get('/api/inventory', authenticateToken, (req, res) => {
     db.all("SELECT * FROM inventory ORDER BY id", (err, inventory) => {
         if (err) return res.status(500).json({ error: err.message });
-        const roundedInventory = inventory.map(i => ({
-            ...i,
-            stockKg: roundToTwo(i.stockKg),
-            priceKg: roundToTwo(i.priceKg),
-            costKg: roundToTwo(i.costKg)
-        }));
-        res.json(roundedInventory || []);
+        res.json(inventory || []);
     });
 });
 
@@ -229,42 +215,36 @@ app.post('/api/inventory', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     const { name, animal, stockKg, priceKg, costKg, lowStockAlert } = req.body;
     db.run(`INSERT INTO inventory (name, animal, stockKg, priceKg, costKg, lowStockAlert) VALUES (?, ?, ?, ?, ?, ?)`,
-        [name, animal, roundToTwo(stockKg), roundToTwo(priceKg), roundToTwo(costKg || priceKg * 0.7), lowStockAlert || 10],
+        [name, animal, stockKg, priceKg, costKg || priceKg * 0.7, lowStockAlert || 10],
         function(err) {
             if (err) return res.status(400).json({ error: 'Failed to add product' });
-            addActivityLog(req.user.fullName, req.user.role, 'Add Product', `Added product: ${name}`);
             res.json({ id: this.lastID, message: 'Product added' });
         });
 });
 
 // UPDATE INVENTORY - ALLOWS BOTH SUPER_ADMIN AND ADMIN
 app.put('/api/inventory/:id', authenticateToken, (req, res) => {
-    // Allow both Super Admin AND Admin to edit inventory
+    console.log(`[INVENTORY] Update by ${req.user.role}: ${req.user.username}`);
     if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Permission denied. Only Super Admin and Admin can edit inventory.' });
+        return res.status(403).json({ error: 'Permission denied' });
     }
     const { name, animal, stockKg, priceKg, costKg, lowStockAlert } = req.body;
     db.run(`UPDATE inventory SET name = ?, animal = ?, stockKg = ?, priceKg = ?, costKg = ?, lowStockAlert = ? WHERE id = ?`,
-        [name, animal, roundToTwo(stockKg), roundToTwo(priceKg), roundToTwo(costKg), lowStockAlert, req.params.id],
+        [name, animal, stockKg, priceKg, costKg, lowStockAlert, req.params.id],
         (err) => {
             if (err) return res.status(400).json({ error: 'Update failed' });
-            addActivityLog(req.user.fullName, req.user.role, 'Edit Inventory', `Edited ${name} - Stock: ${roundToTwo(stockKg)}kg`);
             res.json({ message: 'Product updated' });
         });
 });
 
 app.delete('/api/inventory/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
-    db.get("SELECT name FROM inventory WHERE id = ?", [req.params.id], (err, product) => {
-        const productName = product ? product.name : 'Unknown';
-        db.run("DELETE FROM inventory WHERE id = ?", [req.params.id], (err) => {
-            addActivityLog(req.user.fullName, req.user.role, 'Delete Product', `Deleted product: ${productName}`);
-            res.json({ message: 'Product deleted' });
-        });
+    db.run("DELETE FROM inventory WHERE id = ?", [req.params.id], (err) => {
+        res.json({ message: 'Product deleted' });
     });
 });
 
-// ========== SALES (NO ROLE RESTRICTIONS - BOTH ADMIN AND SUPER ADMIN CAN USE) ==========
+// ========== SALES ==========
 app.get('/api/sales-by-date', authenticateToken, (req, res) => {
     const date = req.query.date || new Date().toISOString().split('T')[0];
     db.get("SELECT * FROM current_day_sales WHERE date = ?", [date], (err, sales) => {
@@ -277,9 +257,6 @@ app.get('/api/sales-by-date', authenticateToken, (req, res) => {
             res.json({ 
                 ...sales, 
                 isClosed: sales.isClosed === 1,
-                totalKg: roundToTwo(sales.totalKg),
-                cashAmount: roundToTwo(sales.cashAmount),
-                mpesaAmount: roundToTwo(sales.mpesaAmount),
                 salesByProduct: salesByProduct
             });
         }
@@ -298,9 +275,6 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
             res.json({ 
                 ...sales, 
                 isClosed: sales.isClosed === 1,
-                totalKg: roundToTwo(sales.totalKg),
-                cashAmount: roundToTwo(sales.cashAmount),
-                mpesaAmount: roundToTwo(sales.mpesaAmount),
                 salesByProduct: salesByProduct
             });
         }
@@ -310,13 +284,15 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
 // ADD SALE - NO ROLE RESTRICTION
 app.post('/api/current-sales', authenticateToken, (req, res) => {
     let { kg, cash, mpesa, productId, productName, date } = req.body;
-    kg = roundToTwo(kg);
-    cash = roundToTwo(cash);
-    mpesa = roundToTwo(mpesa);
     const saleDate = date || new Date().toISOString().split('T')[0];
     
+    console.log(`[SALE] ${req.user.role} (${req.user.username}) adding sale: ${kg}kg of ${productName} on ${saleDate}`);
+    
     db.get("SELECT isClosed FROM current_day_sales WHERE date = ?", [saleDate], (err, dayStatus) => {
-        if (dayStatus && dayStatus.isClosed === 1) return res.status(400).json({ error: 'This day is already closed' });
+        if (dayStatus && dayStatus.isClosed === 1) {
+            console.log(`[SALE] Failed - day is closed`);
+            return res.status(400).json({ error: 'This day is already closed' });
+        }
         
         db.get("SELECT salesByProduct, totalKg, cashAmount, mpesaAmount FROM current_day_sales WHERE date = ?", [saleDate], (err, current) => {
             let salesByProduct = {};
@@ -327,15 +303,23 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
                 currentCash = current.cashAmount || 0;
                 currentMpesa = current.mpesaAmount || 0;
             }
-            if (productName) salesByProduct[productName] = roundToTwo((salesByProduct[productName] || 0) + kg);
+            if (productName) salesByProduct[productName] = (salesByProduct[productName] || 0) + kg;
+            
+            const newTotalKg = currentTotalKg + kg;
+            const newCash = currentCash + cash;
+            const newMpesa = currentMpesa + mpesa;
             
             db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, ?, ?, ?, 0, ?)`,
-                [saleDate, roundToTwo(currentTotalKg + kg), roundToTwo(currentCash + cash), roundToTwo(currentMpesa + mpesa), JSON.stringify(salesByProduct)], (err) => {
-                    if (err) return res.status(400).json({ error: 'Update failed' });
-                    if (productId && productName) {
-                        db.run(`UPDATE inventory SET stockKg = round(stockKg - ?, 2) WHERE id = ?`, [kg, productId]);
+                [saleDate, newTotalKg, newCash, newMpesa, JSON.stringify(salesByProduct)], (err) => {
+                    if (err) {
+                        console.log(`[SALE] Database error:`, err);
+                        return res.status(400).json({ error: 'Update failed' });
                     }
-                    addActivityLog(req.user.fullName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName} on ${saleDate}, Cash: ${cash}, M-Pesa: ${mpesa}`);
+                    if (productId && productName) {
+                        db.run(`UPDATE inventory SET stockKg = stockKg - ? WHERE id = ?`, [kg, productId]);
+                    }
+                    addActivityLog(req.user.fullName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName} on ${saleDate}`);
+                    console.log(`[SALE] Success!`);
                     res.json({ message: 'Sales updated' });
                 });
         });
@@ -345,14 +329,23 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
 // CLOSE DAY - NO ROLE RESTRICTION
 app.post('/api/close-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
+    console.log(`[CLOSE DAY] ${req.user.role} (${req.user.username}) closing day: ${date}`);
+    
     db.get("SELECT * FROM current_day_sales WHERE date = ? AND isClosed = 0", [date], (err, sales) => {
-        if (err || !sales) return res.status(400).json({ error: 'No active day to close' });
-        const total = roundToTwo((sales.cashAmount || 0) + (sales.mpesaAmount || 0));
+        if (err || !sales) {
+            console.log(`[CLOSE DAY] No active day found`);
+            return res.status(400).json({ error: 'No active day to close' });
+        }
+        const total = (sales.cashAmount || 0) + (sales.mpesaAmount || 0);
         db.run(`INSERT INTO daily_closings (date, totalKg, cashAmount, mpesaAmount, totalRevenue, closedBy) VALUES (?, ?, ?, ?, ?, ?)`,
-            [date, roundToTwo(sales.totalKg || 0), roundToTwo(sales.cashAmount || 0), roundToTwo(sales.mpesaAmount || 0), total, req.user.fullName], (err) => {
-                if (err) return res.status(400).json({ error: 'Failed to close day' });
+            [date, sales.totalKg || 0, sales.cashAmount || 0, sales.mpesaAmount || 0, total, req.user.fullName], (err) => {
+                if (err) {
+                    console.log(`[CLOSE DAY] Failed to insert:`, err);
+                    return res.status(400).json({ error: 'Failed to close day' });
+                }
                 db.run("UPDATE current_day_sales SET isClosed = 1 WHERE date = ?", [date]);
                 addActivityLog(req.user.fullName, req.user.role, 'Day Closing', `Closed day ${date} with KES ${total}`);
+                console.log(`[CLOSE DAY] Success!`);
                 res.json({ message: 'Day closed' });
             });
     });
@@ -361,16 +354,17 @@ app.post('/api/close-day', authenticateToken, (req, res) => {
 // START NEW DAY - NO ROLE RESTRICTION
 app.post('/api/new-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
+    console.log(`[NEW DAY] ${req.user.role} (${req.user.username}) starting new day: ${date}`);
+    
     db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [date]);
     addActivityLog(req.user.fullName, req.user.role, 'New Day', `Started new day for ${date}`);
     res.json({ message: 'New day started', date: date });
 });
 
-// DELETE SALE - NO ROLE RESTRICTION
+// DELETE SALE
 app.post('/api/delete-sale', authenticateToken, (req, res) => {
     const { productName, kg, date } = req.body;
     const saleDate = date || new Date().toISOString().split('T')[0];
-    const roundedKg = roundToTwo(kg);
     
     db.get("SELECT salesByProduct, totalKg FROM current_day_sales WHERE date = ? AND isClosed = 0", [saleDate], (err, current) => {
         if (err || !current) return res.status(400).json({ error: 'No active day' });
@@ -378,15 +372,15 @@ app.post('/api/delete-sale', authenticateToken, (req, res) => {
         try { salesByProduct = JSON.parse(current.salesByProduct || '{}'); } catch(e) {}
         if (!salesByProduct[productName]) return res.status(400).json({ error: 'Sale entry not found' });
         
-        const newKg = roundToTwo(salesByProduct[productName] - roundedKg);
+        const newKg = salesByProduct[productName] - kg;
         if (newKg <= 0.01) delete salesByProduct[productName];
         else salesByProduct[productName] = newKg;
         
-        db.run(`UPDATE current_day_sales SET totalKg = round(totalKg - ?, 2), salesByProduct = ? WHERE date = ? AND isClosed = 0`,
-            [roundedKg, JSON.stringify(salesByProduct), saleDate], (err) => {
+        db.run(`UPDATE current_day_sales SET totalKg = totalKg - ?, salesByProduct = ? WHERE date = ? AND isClosed = 0`,
+            [kg, JSON.stringify(salesByProduct), saleDate], (err) => {
                 if (err) return res.status(400).json({ error: 'Failed to update' });
-                db.run(`UPDATE inventory SET stockKg = round(stockKg + ?, 2) WHERE name = ?`, [roundedKg, productName]);
-                addActivityLog(req.user.fullName, req.user.role, 'Delete Sale', `Deleted ${roundedKg}kg of ${productName}`);
+                db.run(`UPDATE inventory SET stockKg = stockKg + ? WHERE name = ?`, [kg, productName]);
+                addActivityLog(req.user.fullName, req.user.role, 'Delete Sale', `Deleted ${kg}kg of ${productName}`);
                 res.json({ message: 'Sale entry deleted' });
             });
     });
@@ -396,21 +390,13 @@ app.post('/api/delete-sale', authenticateToken, (req, res) => {
 app.get('/api/closings', authenticateToken, (req, res) => {
     db.all("SELECT * FROM daily_closings ORDER BY date DESC", (err, closings) => {
         if (err) return res.status(500).json({ error: err.message });
-        const roundedClosings = closings.map(c => ({
-            ...c,
-            totalKg: roundToTwo(c.totalKg),
-            cashAmount: roundToTwo(c.cashAmount),
-            mpesaAmount: roundToTwo(c.mpesaAmount),
-            totalRevenue: roundToTwo(c.totalRevenue)
-        }));
-        res.json(roundedClosings || []);
+        res.json(closings || []);
     });
 });
 
 app.delete('/api/closings/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.run("DELETE FROM daily_closings WHERE id = ?", [req.params.id]);
-    addActivityLog(req.user.fullName, req.user.role, 'Delete Record', 'Deleted closing record');
     res.json({ message: 'Deleted' });
 });
 
@@ -418,8 +404,7 @@ app.delete('/api/closings/:id', authenticateToken, (req, res) => {
 app.get('/api/expenses', authenticateToken, (req, res) => {
     db.all("SELECT * FROM expenses ORDER BY date DESC", (err, expenses) => {
         if (err) return res.status(500).json({ error: err.message });
-        const roundedExpenses = expenses.map(e => ({ ...e, amount: roundToTwo(e.amount) }));
-        res.json(roundedExpenses || []);
+        res.json(expenses || []);
     });
 });
 
@@ -427,9 +412,8 @@ app.post('/api/expenses', authenticateToken, (req, res) => {
     const { category, amount, description, date } = req.body;
     const expenseDate = date || new Date().toISOString().split('T')[0];
     db.run(`INSERT INTO expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
-        [expenseDate, category, roundToTwo(amount), description || ''], function(err) {
+        [expenseDate, category, amount, description || ''], function(err) {
             if (err) return res.status(400).json({ error: 'Failed to add expense' });
-            addActivityLog(req.user.fullName, req.user.role, 'Expense Added', `${category}: KES ${roundToTwo(amount)} on ${expenseDate}`);
             res.json({ id: this.lastID, message: 'Expense added' });
         });
 });
@@ -437,7 +421,6 @@ app.post('/api/expenses', authenticateToken, (req, res) => {
 app.delete('/api/expenses/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
     db.run("DELETE FROM expenses WHERE id = ?", [req.params.id]);
-    addActivityLog(req.user.fullName, req.user.role, 'Delete Expense', 'Deleted expense record');
     res.json({ message: 'Deleted' });
 });
 
@@ -459,7 +442,6 @@ app.post('/api/users', authenticateToken, (req, res) => {
         [username, hashedPassword, role || 'admin', fullName, email || '', phone || '', 1, getLocalTimestamp()],
         function(err) {
             if (err) return res.status(400).json({ error: 'Username already exists' });
-            addActivityLog(req.user.fullName, req.user.role, 'Create User', `Created user: ${username} (${fullName})`);
             res.json({ id: this.lastID, message: 'User created' });
         });
 });
@@ -482,18 +464,13 @@ app.put('/api/users/:id', authenticateToken, (req, res) => {
     query += " WHERE id = ?";
     params.push(req.params.id);
     db.run(query, params);
-    addActivityLog(req.user.fullName, req.user.role, 'Update User', `Updated user ID: ${req.params.id}`);
     res.json({ message: 'User updated' });
 });
 
 app.delete('/api/users/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Permission denied' });
-    db.get("SELECT username FROM users WHERE id = ?", [req.params.id], (err, user) => {
-        const deletedUser = user ? user.username : 'Unknown';
-        db.run("DELETE FROM users WHERE id = ? AND username NOT IN ('superadmin', 'admin1')", [req.params.id]);
-        addActivityLog(req.user.fullName, req.user.role, 'Delete User', `Deleted user: ${deletedUser}`);
-        res.json({ message: 'User deleted' });
-    });
+    db.run("DELETE FROM users WHERE id = ? AND username NOT IN ('superadmin', 'admin1')", [req.params.id]);
+    res.json({ message: 'User deleted' });
 });
 
 // ========== LOGS (SUPER ADMIN ONLY) ==========
@@ -516,14 +493,10 @@ app.get('/api/dashboard-stats', authenticateToken, (req, res) => {
             db.get("SELECT COUNT(*) as lowStock FROM inventory WHERE stockKg <= lowStockAlert", (err, lowStock) => {
                 db.get("SELECT SUM(totalRevenue) as weeklyRevenue FROM daily_closings WHERE date >= ?", [sevenDaysAgo.toISOString().split('T')[0]], (err, weeklyRev) => {
                     res.json({
-                        todaySales: todaySales ? {
-                            totalKg: roundToTwo(todaySales.totalKg),
-                            cashAmount: roundToTwo(todaySales.cashAmount),
-                            mpesaAmount: roundToTwo(todaySales.mpesaAmount)
-                        } : { totalKg: 0, cashAmount: 0, mpesaAmount: 0 },
-                        inventoryValue: roundToTwo(invValue?.inventoryValue || 0),
+                        todaySales: todaySales || { totalKg: 0, cashAmount: 0, mpesaAmount: 0 },
+                        inventoryValue: invValue?.inventoryValue || 0,
                         lowStockCount: lowStock?.lowStock || 0,
-                        weeklyRevenue: roundToTwo(weeklyRev?.weeklyRevenue || 0)
+                        weeklyRevenue: weeklyRev?.weeklyRevenue || 0
                     });
                 });
             });
@@ -542,8 +515,7 @@ app.post('/api/reset-all', authenticateToken, (req, res) => {
         db.run("DELETE FROM current_day_sales");
         db.run(`INSERT INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [today]);
         db.run("UPDATE inventory SET stockKg = 0");
-        addActivityLog(req.user.fullName, req.user.role, 'System Reset', 'All data was reset - Stock set to 0');
-        res.json({ message: 'All data has been reset to zero. Stock quantities are now 0.' });
+        res.json({ message: 'All data has been reset to zero.' });
     });
 });
 
@@ -552,7 +524,6 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start server
 app.listen(PORT, () => {
     console.log('\n========================================');
     console.log('🚀 Bismillah Butchery Pro Server Running!');
