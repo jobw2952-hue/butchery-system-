@@ -101,19 +101,21 @@
         .profit-card { background: linear-gradient(135deg, #10b981, #059669); color: white; }
         .loss-card { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
         .chart-container { max-width: 500px; margin: 0 auto; }
-        .date-selector { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 10px; }
-        .date-selector label { margin: 0; }
-        .date-selector input { width: auto; min-width: 160px; }
+        .date-selector { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 10px; }
+        .date-selector label { margin: 0; font-weight: 600; }
+        .date-selector input { width: auto; min-width: 180px; padding: 10px; }
+        .sales-list { margin-top: 20px; }
+        .closing-section { margin-top: 20px; padding-top: 20px; border-top: 2px solid #e2e8f0; }
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .sales-panel { grid-template-columns: 1fr; } .progress-section { grid-template-columns: 1fr; } .report-selector { flex-direction: column; align-items: stretch; } .date-range { justify-content: center; } }
         @media (max-width: 768px) { .dashboard-layout { flex-direction: column; } .sidebar { width: 100%; position: relative; } }
     </style>
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.5.0 🔧 Fixed Admin Sales</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.6.0 📅 Sales Workflow</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - COMPLETE VERSION ==========
+    // ========== BISMILAH BUTCHERY PRO - PROPER SALES WORKFLOW ==========
     
     function roundToTwo(num) {
         if (isNaN(num)) return 0;
@@ -144,10 +146,8 @@
     async function apiCall(endpoint, method = 'GET', body = null) {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        
         const options = { method, headers };
         if (body) options.body = JSON.stringify(body);
-        
         try {
             const response = await fetch(`${API_URL}${endpoint}`, options);
             if (response.status === 401) {
@@ -166,16 +166,10 @@
     
     async function loadAllData() {
         if (!token) return;
-        
         const [usersData, invData, closingsData, salesData, expensesData, logsData] = await Promise.all([
-            apiCall('/api/users'),
-            apiCall('/api/inventory'),
-            apiCall('/api/closings'),
-            apiCall('/api/current-sales'),
-            apiCall('/api/expenses'),
-            apiCall('/api/logs')
+            apiCall('/api/users'), apiCall('/api/inventory'), apiCall('/api/closings'),
+            apiCall('/api/current-sales'), apiCall('/api/expenses'), apiCall('/api/logs')
         ]);
-        
         users = usersData || [];
         inventory = invData || [];
         dailyClosings = closingsData || [];
@@ -200,9 +194,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
             });
-            
             const data = await response.json();
-            
             if (response.ok && data.token) {
                 token = data.token;
                 currentUser = data.user;
@@ -231,9 +223,9 @@
     function canManageUsers() { return isSuperAdmin(); }
     function canViewLogs() { return isSuperAdmin(); }
     function canDelete() { return isSuperAdmin(); }
-    
     function setPage(page) { currentPage = page; renderApp(); }
     
+    // Date change handler
     window.changeSalesDate = () => {
         const datePicker = document.getElementById('salesDatePicker');
         if (datePicker) {
@@ -249,18 +241,12 @@
         const cashAmount = parseFloat(document.getElementById('dailyCash')?.value) || 0;
         const mpesaAmount = parseFloat(document.getElementById('dailyMpesa')?.value) || 0;
         const totalAmount = cashAmount + mpesaAmount;
-        
-        if (!selectedProductId || selectedProductId === '' || totalAmount <= 0) {
-            return;
-        }
-        
+        if (!selectedProductId || selectedProductId === '' || totalAmount <= 0) return;
         const product = inventory.find(p => p.id == selectedProductId);
         if (product && product.priceKg > 0) {
             const calculatedKg = totalAmount / product.priceKg;
             const kgInput = document.getElementById('dailyKg');
-            if (kgInput) {
-                kgInput.value = roundToTwo(calculatedKg).toFixed(2);
-            }
+            if (kgInput) kgInput.value = roundToTwo(calculatedKg).toFixed(2);
         }
     };
     
@@ -270,10 +256,8 @@
         autoCalculateKg();
     };
     
-    // ADD SALE - FIXED FOR BOTH ADMIN AND SUPER ADMIN
+    // ADD SALE
     window.addSale = async () => {
-        console.log('addSale function called');
-        
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
         let kg = parseFloat(document.getElementById('dailyKg')?.value);
@@ -306,9 +290,7 @@
         const result = await apiCall('/api/current-sales', 'POST', { 
             productId: selectedProductId,
             productName: product.name,
-            kg, 
-            cash: roundToTwo(cash), 
-            mpesa: roundToTwo(mpesa),
+            kg, cash: roundToTwo(cash), mpesa: roundToTwo(mpesa),
             date: saleDate
         });
         
@@ -326,29 +308,36 @@
         }
     };
     
-    // CLOSE DAY - FIXED FOR BOTH ADMIN AND SUPER ADMIN
+    // CLOSE DAY
     window.closeDay = async () => {
-        console.log('closeDay function called');
-        
         const today = selectedSalesDate;
         if (currentDaySales.isClosed) {
-            alert('Already closed');
+            alert('This day is already closed!');
             return;
         }
         if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) {
-            alert('No sales to close');
+            alert('No sales to close. Please add sales first.');
             return;
         }
         
         const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        let salesSummary = '';
+        if (currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0) {
+            salesSummary = '\n\n📊 Sales Summary:';
+            for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
+                const productInfo = inventory.find(p => p.name === product);
+                const revenue = kg * (productInfo?.priceKg || 0);
+                salesSummary += `\n   • ${product}: ${roundToTwo(kg)} kg = KES ${roundToTwo(revenue).toLocaleString()}`;
+            }
+        }
         
-        if (confirm(`Close ${today}?\nTotal KG: ${roundToTwo(currentDaySales.totalKg)} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${roundToTwo(total).toLocaleString()}`)) {
+        if (confirm(`🔒 CLOSE DAY: ${today}\n\n📦 Total KG: ${roundToTwo(currentDaySales.totalKg)} kg\n💰 Cash: KES ${currentDaySales.cashAmount.toLocaleString()}\n📱 M-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\n💵 Total Revenue: KES ${roundToTwo(total).toLocaleString()}${salesSummary}\n\n⚠️ Once closed, you cannot add more sales for this day.\n\nDo you want to close this day?`)) {
             const result = await apiCall('/api/close-day', 'POST', { date: today });
             if (result) {
                 await loadSalesForDate(today);
                 await loadAllData();
                 renderApp();
-                alert('✅ Day closed!');
+                alert(`✅ Day ${today} closed successfully!`);
             } else {
                 alert('Failed to close day.');
             }
@@ -358,54 +347,37 @@
     // START NEW DAY
     window.startNewDay = async () => {
         const today = selectedSalesDate;
+        if (!currentDaySales.isClosed && (currentDaySales.totalKg > 0 || currentDaySales.cashAmount > 0)) {
+            if (!confirm(`⚠️ You have sales recorded for ${today} that are not closed.\n\nStarting a new day will reset all sales for ${today}.\n\nAre you sure?`)) {
+                return;
+            }
+        }
         const result = await apiCall('/api/new-day', 'POST', { date: today });
         if (result) {
             await loadSalesForDate(today);
             await loadAllData();
             renderApp();
-            alert('✅ New day started!');
+            alert(`✅ New day started for ${today}!`);
         }
     };
     
     // Delete sale entry
     window.deleteSaleEntry = async (productName, kg) => {
-        if (!confirm(`Delete sale: ${kg}kg of ${productName}? This will restore stock.`)) {
-            return;
-        }
-        
-        const result = await apiCall('/api/delete-sale', 'POST', { 
-            productName, 
-            kg: roundToTwo(parseFloat(kg)),
-            date: selectedSalesDate
-        });
-        
+        if (!confirm(`Delete sale: ${kg}kg of ${productName}? This will restore stock.`)) return;
+        const result = await apiCall('/api/delete-sale', 'POST', { productName, kg: roundToTwo(parseFloat(kg)), date: selectedSalesDate });
         if (result) {
             await loadSalesForDate(selectedSalesDate);
             await loadAllData();
             renderApp();
             alert(`✅ Sale entry deleted! Stock restored for ${productName}.`);
-        } else {
-            alert('Failed to delete sale entry.');
         }
     };
     
     // Export functions
     window.exportToExcel = () => {
         const filtered = getFilteredClosings();
-        if (filtered.length === 0) {
-            alert('No data to export');
-            return;
-        }
-        
-        const data = filtered.map(r => ({
-            'Date': r.date,
-            'Total KG': roundToTwo(r.totalKg),
-            'Cash Amount': r.cashAmount,
-            'M-Pesa Amount': r.mpesaAmount,
-            'Total Revenue': r.totalRevenue,
-            'Closed By': r.closedBy
-        }));
-        
+        if (filtered.length === 0) { alert('No data to export'); return; }
+        const data = filtered.map(r => ({ 'Date': r.date, 'Total KG': roundToTwo(r.totalKg), 'Cash Amount': r.cashAmount, 'M-Pesa Amount': r.mpesaAmount, 'Total Revenue': r.totalRevenue, 'Closed By': r.closedBy }));
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Sales Report');
@@ -415,11 +387,7 @@
     
     window.exportToPDF = () => {
         const filtered = getFilteredClosings();
-        if (filtered.length === 0) {
-            alert('No data to export');
-            return;
-        }
-        
+        if (filtered.length === 0) { alert('No data to export'); return; }
         const totalRevenue = filtered.reduce((sum, r) => sum + r.totalRevenue, 0);
         const totalKg = filtered.reduce((sum, r) => sum + r.totalKg, 0);
         const totalExpenses = expenses.filter(e => {
@@ -431,77 +399,24 @@
             return true;
         }).reduce((sum, e) => sum + e.amount, 0);
         const totalProfit = totalRevenue - totalExpenses;
-        
         const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>Butchery Sales Report</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    h1 { color: #1e293b; text-align: center; }
-                    .summary { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
-                    .summary-box { background: #f1f5f9; padding: 15px; border-radius: 8px; flex: 1; text-align: center; }
-                    .summary-box h3 { margin-bottom: 5px; }
-                    .summary-box .value { font-size: 24px; font-weight: bold; color: #3b82f6; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                    th { background: #f8fafc; }
-                    .profit { color: #10b981; }
-                    .loss { color: #ef4444; }
-                </style>
-            </head>
-            <body>
-                <h1>Bismillah Butchery Pro - Sales Report</h1>
-                <p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p>
-                <div class="summary">
-                    <div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div>
-                    <div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div>
-                    <div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div>
-                    <div class="summary-box"><h3>Total Profit</h3><div class="value ${totalProfit >= 0 ? 'profit' : 'loss'}">KES ${totalProfit.toLocaleString()}</div></div>
-                </div>
-                <table>
-                    <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></table></thead>
-                    <tbody>
-                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}
-                    </tbody>
-                </table>
-                <p style="margin-top: 20px; text-align: center;">Generated on ${new Date().toLocaleString()}</p>
-                <button onclick="window.print()" style="margin-top: 20px; padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer;">Print / Save as PDF</button>
-            </body>
-            </html>
-        `);
+        printWindow.document.write(`<html><head><title>Butchery Sales Report</title><style>body{font-family:Arial,sans-serif;padding:20px;}h1{color:#1e293b;text-align:center;}.summary{display:flex;gap:20px;margin:20px 0;flex-wrap:wrap;}.summary-box{background:#f1f5f9;padding:15px;border-radius:8px;flex:1;text-align:center;}.summary-box .value{font-size:24px;font-weight:bold;color:#3b82f6;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f8fafc;}.profit{color:#10b981;}.loss{color:#ef4444;}</style></head><body><h1>Bismillah Butchery Pro - Sales Report</h1><p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p><div class="summary"><div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div><div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div><div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div><div class="summary-box ${totalProfit >= 0 ? 'profit' : 'loss'}"><h3>Total Profit</h3><div class="value">KES ${totalProfit.toLocaleString()}</div></div></div><table><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead><tbody>${filtered.map(r => `<tr><td>${r.date}</td><td>${roundToTwo(r.totalKg)}</td><td>KES ${r.cashAmount.toLocaleString()}</td><td>KES ${r.mpesaAmount.toLocaleString()}</td><td>KES ${r.totalRevenue.toLocaleString()}</td><td>${r.closedBy}</td></tr>`).join('')}</tbody></table><p style="margin-top:20px;text-align:center;">Generated on ${new Date().toLocaleString()}</p><button onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;">Print / Save as PDF</button></body></html>`);
         printWindow.document.close();
     };
     
     function getFilteredClosings() {
         let filtered = [...dailyClosings];
-        
-        if (reportStartDate) {
-            const start = new Date(reportStartDate);
-            filtered = filtered.filter(r => new Date(r.date) >= start);
-        }
-        if (reportEndDate) {
-            const end = new Date(reportEndDate);
-            end.setHours(23, 59, 59);
-            filtered = filtered.filter(r => new Date(r.date) <= end);
-        }
-        
-        if (selectedReport === 'daily') {
-            filtered = filtered.slice(0, 7);
-        }
-        
+        if (reportStartDate) filtered = filtered.filter(r => new Date(r.date) >= new Date(reportStartDate));
+        if (reportEndDate) { const end = new Date(reportEndDate); end.setHours(23,59,59); filtered = filtered.filter(r => new Date(r.date) <= end); }
+        if (selectedReport === 'daily') filtered = filtered.slice(0, 7);
         return filtered;
     }
     
     window.updateDateRange = () => {
-        const startDate = document.getElementById('reportStartDate')?.value;
-        const endDate = document.getElementById('reportEndDate')?.value;
-        reportStartDate = startDate || '';
-        reportEndDate = endDate || '';
+        reportStartDate = document.getElementById('reportStartDate')?.value || '';
+        reportEndDate = document.getElementById('reportEndDate')?.value || '';
         renderApp();
     };
-    
     window.resetDateRange = () => {
         document.getElementById('reportStartDate').value = '';
         document.getElementById('reportEndDate').value = '';
@@ -509,29 +424,17 @@
         reportEndDate = '';
         renderApp();
     };
+    window.changeReport = (value) => { selectedReport = value; renderApp(); };
     
-    window.changeReport = (value) => { 
-        selectedReport = value; 
-        renderApp();
-    };
-    
-    // Expense with date picker
+    // Expense
     window.addExpenseWithDate = async () => {
         const category = document.getElementById('expCategory')?.value;
         const amount = parseFloat(document.getElementById('expAmount')?.value);
         const description = document.getElementById('expDesc')?.value;
         const expenseDate = document.getElementById('expenseDate')?.value;
-        
         if (!category || isNaN(amount) || amount <= 0) return alert('Enter valid expense');
         if (!expenseDate) return alert('Please select a date');
-        
-        const result = await apiCall('/api/expenses', 'POST', { 
-            category, 
-            amount: roundToTwo(amount), 
-            description: description || '',
-            date: expenseDate
-        });
-        
+        const result = await apiCall('/api/expenses', 'POST', { category, amount: roundToTwo(amount), description: description || '', date: expenseDate });
         if (result) {
             await loadAllData();
             renderApp();
@@ -545,99 +448,39 @@
     
     window.deleteExpense = async (expenseId) => {
         if (!canDelete()) return alert('Only Super Admin can delete expenses');
-        const expense = expenses.find(e => e.id === expenseId);
-        if (expense && confirm(`Delete expense: ${expense.category}?`)) {
-            const result = await apiCall(`/api/expenses/${expenseId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Expense deleted');
-            }
-        }
+        if (confirm('Delete this expense?')) { await apiCall(`/api/expenses/${expenseId}`, 'DELETE'); await loadAllData(); renderApp(); alert('✅ Expense deleted'); }
     };
-    
     window.deleteClosingRecord = async (recordId) => {
         if (!canDelete()) return alert('Only Super Admin can delete closing records');
-        if (confirm('Delete this closing record?')) {
-            const result = await apiCall(`/api/closings/${recordId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Record deleted');
-            }
-        }
+        if (confirm('Delete this record?')) { await apiCall(`/api/closings/${recordId}`, 'DELETE'); await loadAllData(); renderApp(); alert('✅ Record deleted'); }
     };
     
-    // Toggle password visibility
     window.togglePasswordVisibility = (userId) => {
-        if (!isSuperAdmin()) {
-            alert('Only Super Admin can view passwords');
-            return;
-        }
+        if (!isSuperAdmin()) { alert('Only Super Admin can view passwords'); return; }
         visiblePasswords[userId] = !visiblePasswords[userId];
         renderApp();
     };
-    
     window.toggleLoginPassword = () => {
         loginPasswordVisible = !loginPasswordVisible;
         const input = document.getElementById('loginPasswordInput');
         if (input) input.type = loginPasswordVisible ? 'text' : 'password';
     };
     
-    // Reset function
     window.resetAllData = () => {
-        if (!isSuperAdmin()) {
-            alert('Only Super Admin can reset all data!');
-            return;
-        }
-        
+        if (!isSuperAdmin()) { alert('Only Super Admin can reset all data!'); return; }
         if (confirm('⚠️ WARNING: This will delete ALL data! This cannot be undone!')) {
-            apiCall('/api/reset-all', 'POST').then(() => {
-                loadAllData();
-                renderApp();
-                alert('✅ All data has been reset to zero!');
-            });
+            apiCall('/api/reset-all', 'POST').then(() => { loadAllData(); renderApp(); alert('✅ All data has been reset to zero!'); });
         }
     };
     
-    // User functions
+    // User management
     window.showAddUserModal = () => {
-        if (!isSuperAdmin()) {
-            alert('Only Super Admin can add users');
-            return;
-        }
-        
-        const modalHtml = `
-            <div class="modal" id="addUserModal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3><i class="fas fa-user-plus"></i> Add New User</h3>
-                        <button class="close-modal" onclick="closeAddUserModal()">&times;</button>
-                    </div>
-                    <div class="form-group"><label>Full Name *</label><input type="text" id="newUserFullName" placeholder="Enter full name"></div>
-                    <div class="form-group"><label>Username *</label><input type="text" id="newUserUsername" placeholder="Enter username"></div>
-                    <div class="form-group"><label>Password *</label><input type="password" id="newUserPassword" placeholder="Enter password"></div>
-                    <div class="form-group"><label>Confirm Password *</label><input type="password" id="newUserConfirmPassword" placeholder="Confirm password"></div>
-                    <div class="form-group"><label>Email (Optional)</label><input type="email" id="newUserEmail" placeholder="Enter email"></div>
-                    <div class="form-group"><label>Phone (Optional)</label><input type="tel" id="newUserPhone" placeholder="Enter phone number"></div>
-                    <div class="form-group"><label>Role</label><select id="newUserRole"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
-                    <div style="display:flex; gap:12px; margin-top:20px;">
-                        <button class="btn btn-success" onclick="submitAddUser()" style="flex:1;">Create User</button>
-                        <button class="btn-delete" onclick="closeAddUserModal()" style="flex:1;">Cancel</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        const existing = document.getElementById('addUserModal');
-        if (existing) existing.remove();
+        if (!isSuperAdmin()) { alert('Only Super Admin can add users'); return; }
+        const modalHtml = `<div class="modal" id="addUserModal"><div class="modal-content"><div class="modal-header"><h3><i class="fas fa-user-plus"></i> Add New User</h3><button class="close-modal" onclick="closeAddUserModal()">&times;</button></div><div class="form-group"><label>Full Name *</label><input type="text" id="newUserFullName" placeholder="Enter full name"></div><div class="form-group"><label>Username *</label><input type="text" id="newUserUsername" placeholder="Enter username"></div><div class="form-group"><label>Password *</label><input type="password" id="newUserPassword" placeholder="Enter password"></div><div class="form-group"><label>Confirm Password *</label><input type="password" id="newUserConfirmPassword" placeholder="Confirm password"></div><div class="form-group"><label>Email (Optional)</label><input type="email" id="newUserEmail" placeholder="Enter email"></div><div class="form-group"><label>Phone (Optional)</label><input type="tel" id="newUserPhone" placeholder="Enter phone number"></div><div class="form-group"><label>Role</label><select id="newUserRole"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div><div style="display:flex; gap:12px; margin-top:20px;"><button class="btn btn-success" onclick="submitAddUser()" style="flex:1;">Create User</button><button class="btn-delete" onclick="closeAddUserModal()" style="flex:1;">Cancel</button></div></div></div>`;
+        const existing = document.getElementById('addUserModal'); if (existing) existing.remove();
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     };
-    
-    window.closeAddUserModal = () => {
-        const modal = document.getElementById('addUserModal');
-        if (modal) modal.remove();
-    };
-    
+    window.closeAddUserModal = () => { const modal = document.getElementById('addUserModal'); if (modal) modal.remove(); };
     window.submitAddUser = async () => {
         const fullName = document.getElementById('newUserFullName')?.value;
         const username = document.getElementById('newUserUsername')?.value;
@@ -646,183 +489,12 @@
         const email = document.getElementById('newUserEmail')?.value;
         const phone = document.getElementById('newUserPhone')?.value;
         const role = document.getElementById('newUserRole')?.value;
-        
-        if (!fullName || !username || !password) {
-            alert('Please fill all required fields');
-            return;
-        }
-        if (password !== confirmPassword) {
-            alert('Passwords do not match!');
-            return;
-        }
-        if (password.length < 4) {
-            alert('Password must be at least 4 characters');
-            return;
-        }
-        
-        const result = await apiCall('/api/users', 'POST', {
-            username, password, fullName, role: role || 'admin', email: email || '', phone: phone || ''
-        });
-        
-        if (result) {
-            closeAddUserModal();
-            await loadAllData();
-            renderApp();
-            alert(`✅ User "${username}" created successfully!`);
-        } else {
-            alert('Username already exists!');
-        }
-    };
-    
-    // Product edit functions
-    window.openEditProductModal = async (productId) => {
-        const product = inventory.find(p => p.id === productId);
-        if (!product) return;
-        
-        const modalHtml = `
-            <div class="modal" id="editProductModal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3>
-                        <button class="close-modal" onclick="closeEditProductModal()">&times;</button>
-                    </div>
-                    <div class="form-group"><label>Product Name</label><input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}"></div>
-                    <div class="form-group"><label>Animal Type</label><select id="editAnimal"><option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option><option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option><option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option><option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option></select></div>
-                    <div class="form-group"><label>Stock Quantity (kg)</label><input type="number" id="editStock" step="0.1" value="${product.stockKg}"></div>
-                    <div class="form-group"><label>Selling Price (KES per kg)</label><input type="number" id="editPrice" step="10" value="${product.priceKg}"></div>
-                    <div class="form-group"><label>Cost Price (KES per kg)</label><input type="number" id="editCost" step="10" value="${product.costKg}"></div>
-                    <div class="form-group"><label>Low Stock Alert (kg)</label><input type="number" id="editAlert" step="1" value="${product.lowStockAlert}"></div>
-                    <div style="display:flex; gap:12px; margin-top:20px;">
-                        <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
-                        <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        const existing = document.getElementById('editProductModal');
-        if (existing) existing.remove();
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-    };
-    
-    window.closeEditProductModal = () => {
-        const modal = document.getElementById('editProductModal');
-        if (modal) modal.remove();
-    };
-    
-    window.saveProductEdit = async (productId) => {
-        const name = document.getElementById('editName')?.value;
-        const animal = document.getElementById('editAnimal')?.value;
-        const stockKg = roundToTwo(parseFloat(document.getElementById('editStock')?.value));
-        const priceKg = roundToTwo(parseFloat(document.getElementById('editPrice')?.value));
-        const costKg = roundToTwo(parseFloat(document.getElementById('editCost')?.value));
-        const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
-        
-        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
-            alert('Please fill all required fields');
-            return;
-        }
-        
-        const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
-            name, animal, stockKg, priceKg, costKg, lowStockAlert
-        });
-        
-        if (result) {
-            closeEditProductModal();
-            await loadAllData();
-            renderApp();
-            alert('✅ Product updated successfully!');
-        } else {
-            alert('Update failed. Please try again.');
-        }
-    };
-    
-    window.openAddProductModal = () => {
-        if (!isSuperAdmin()) return alert('Only Super Admin can add products');
-        
-        const modalHtml = `
-            <div class="modal" id="addProductModal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3><i class="fas fa-plus-circle"></i> Add New Product</h3>
-                        <button class="close-modal" onclick="closeAddProductModal()">&times;</button>
-                    </div>
-                    <div class="form-group"><label>Product Name *</label><input type="text" id="addName" placeholder="Enter product name"></div>
-                    <div class="form-group"><label>Animal Type *</label><select id="addAnimal"><option value="Cow">Cow</option><option value="Goat">Goat</option><option value="Chicken">Chicken</option><option value="Liver">Liver</option></select></div>
-                    <div class="form-group"><label>Initial Stock (kg) *</label><input type="number" id="addStock" step="0.1" placeholder="Enter stock quantity"></div>
-                    <div class="form-group"><label>Selling Price (KES per kg) *</label><input type="number" id="addPrice" step="10" placeholder="Enter selling price"></div>
-                    <div class="form-group"><label>Cost Price (KES per kg)</label><input type="number" id="addCost" step="10" placeholder="Enter cost price (optional)"></div>
-                    <div class="form-group"><label>Low Stock Alert (kg)</label><input type="number" id="addAlert" step="1" value="10" placeholder="Alert when stock below"></div>
-                    <div style="display:flex; gap:12px; margin-top:20px;">
-                        <button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;">Add Product</button>
-                        <button class="btn-delete" onclick="closeAddProductModal()" style="flex:1;">Cancel</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        const existing = document.getElementById('addProductModal');
-        if (existing) existing.remove();
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-    };
-    
-    window.closeAddProductModal = () => {
-        const modal = document.getElementById('addProductModal');
-        if (modal) modal.remove();
-    };
-    
-    window.submitAddProduct = async () => {
-        const name = document.getElementById('addName')?.value;
-        const animal = document.getElementById('addAnimal')?.value;
-        const stockKg = roundToTwo(parseFloat(document.getElementById('addStock')?.value));
-        const priceKg = roundToTwo(parseFloat(document.getElementById('addPrice')?.value));
-        let costKg = roundToTwo(parseFloat(document.getElementById('addCost')?.value));
-        const lowStockAlert = parseFloat(document.getElementById('addAlert')?.value) || 10;
-        
-        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
-            alert('Please fill all required fields (Name, Stock, Price)');
-            return;
-        }
-        if (isNaN(costKg)) costKg = priceKg * 0.7;
-        
-        const result = await apiCall('/api/inventory', 'POST', {
-            name, animal, stockKg, priceKg, costKg, lowStockAlert
-        });
-        
-        if (result) {
-            closeAddProductModal();
-            await loadAllData();
-            renderApp();
-            alert(`✅ Product "${name}" added successfully!`);
-        } else {
-            alert('Failed to add product. Please try again.');
-        }
-    };
-    
-    window.deleteInventoryProduct = async (productId) => {
-        if (!canDelete()) return alert('Only Super Admin can delete products');
-        const product = inventory.find(p => p.id === productId);
-        if (product && confirm(`Delete "${product.name}"?`)) {
-            const result = await apiCall(`/api/inventory/${productId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ Product deleted');
-            }
-        }
-    };
-    
-    window.openEditUserModal = async (userId) => {
-        if (!canManageUsers()) return alert('Only Super Admin can manage users');
-        const user = users.find(u => u.id === userId);
-        if (!user) return;
-        const newFullName = prompt('Enter new full name:', user.fullName);
-        if (newFullName && newFullName !== user.fullName) {
-            const result = await apiCall(`/api/users/${userId}`, 'PUT', { fullName: newFullName });
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ User updated');
-            }
-        }
+        if (!fullName || !username || !password) { alert('Please fill all required fields'); return; }
+        if (password !== confirmPassword) { alert('Passwords do not match!'); return; }
+        if (password.length < 4) { alert('Password must be at least 4 characters'); return; }
+        const result = await apiCall('/api/users', 'POST', { username, password, fullName, role: role || 'admin', email: email || '', phone: phone || '' });
+        if (result) { closeAddUserModal(); await loadAllData(); renderApp(); alert(`✅ User "${username}" created successfully!`); }
+        else { alert('Username already exists!'); }
     };
     
     window.deleteUser = async (userId) => {
@@ -831,56 +503,85 @@
         if (!user) return;
         if (user.username === 'superadmin') { alert('Cannot delete Super Admin!'); return; }
         if (user.id === currentUser?.id) { alert('Cannot delete your own account!'); return; }
-        if (confirm(`Delete ${user.fullName}?`)) {
-            const result = await apiCall(`/api/users/${userId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ User deleted');
-            }
-        }
+        if (confirm(`Delete ${user.fullName}?`)) { await apiCall(`/api/users/${userId}`, 'DELETE'); await loadAllData(); renderApp(); alert('✅ User deleted'); }
+    };
+    window.openEditUserModal = async (userId) => {
+        if (!canManageUsers()) return alert('Only Super Admin can manage users');
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        const newFullName = prompt('Enter new full name:', user.fullName);
+        if (newFullName && newFullName !== user.fullName) { await apiCall(`/api/users/${userId}`, 'PUT', { fullName: newFullName }); await loadAllData(); renderApp(); alert('✅ User updated'); }
+    };
+    
+    // Product edit
+    window.openEditProductModal = async (productId) => {
+        const product = inventory.find(p => p.id === productId);
+        if (!product) return;
+        const modalHtml = `<div class="modal" id="editProductModal"><div class="modal-content"><div class="modal-header"><h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3><button class="close-modal" onclick="closeEditProductModal()">&times;</button></div><div class="form-group"><label>Product Name</label><input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}"></div><div class="form-group"><label>Animal Type</label><select id="editAnimal"><option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option><option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option><option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option><option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option></select></div><div class="form-group"><label>Stock Quantity (kg)</label><input type="number" id="editStock" step="0.1" value="${product.stockKg}"></div><div class="form-group"><label>Selling Price (KES per kg)</label><input type="number" id="editPrice" step="10" value="${product.priceKg}"></div><div class="form-group"><label>Cost Price (KES per kg)</label><input type="number" id="editCost" step="10" value="${product.costKg}"></div><div class="form-group"><label>Low Stock Alert (kg)</label><input type="number" id="editAlert" step="1" value="${product.lowStockAlert}"></div><div style="display:flex; gap:12px; margin-top:20px;"><button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button><button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button></div></div></div>`;
+        const existing = document.getElementById('editProductModal'); if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    window.closeEditProductModal = () => { const m = document.getElementById('editProductModal'); if (m) m.remove(); };
+    window.saveProductEdit = async (productId) => {
+        const name = document.getElementById('editName')?.value;
+        const animal = document.getElementById('editAnimal')?.value;
+        const stockKg = roundToTwo(parseFloat(document.getElementById('editStock')?.value));
+        const priceKg = roundToTwo(parseFloat(document.getElementById('editPrice')?.value));
+        const costKg = roundToTwo(parseFloat(document.getElementById('editCost')?.value));
+        const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
+        if (!name || isNaN(stockKg) || isNaN(priceKg)) { alert('Please fill all required fields'); return; }
+        const result = await apiCall(`/api/inventory/${productId}`, 'PUT', { name, animal, stockKg, priceKg, costKg, lowStockAlert });
+        if (result) { closeEditProductModal(); await loadAllData(); renderApp(); alert('✅ Product updated successfully!'); }
+        else { alert('Update failed. Please try again.'); }
+    };
+    
+    window.openAddProductModal = () => {
+        if (!isSuperAdmin()) return alert('Only Super Admin can add products');
+        const modalHtml = `<div class="modal" id="addProductModal"><div class="modal-content"><div class="modal-header"><h3><i class="fas fa-plus-circle"></i> Add New Product</h3><button class="close-modal" onclick="closeAddProductModal()">&times;</button></div><div class="form-group"><label>Product Name *</label><input type="text" id="addName" placeholder="Enter product name"></div><div class="form-group"><label>Animal Type *</label><select id="addAnimal"><option value="Cow">Cow</option><option value="Goat">Goat</option><option value="Chicken">Chicken</option><option value="Liver">Liver</option></select></div><div class="form-group"><label>Initial Stock (kg) *</label><input type="number" id="addStock" step="0.1" placeholder="Enter stock quantity"></div><div class="form-group"><label>Selling Price (KES per kg) *</label><input type="number" id="addPrice" step="10" placeholder="Enter selling price"></div><div class="form-group"><label>Cost Price (KES per kg)</label><input type="number" id="addCost" step="10" placeholder="Enter cost price (optional)"></div><div class="form-group"><label>Low Stock Alert (kg)</label><input type="number" id="addAlert" step="1" value="10" placeholder="Alert when stock below"></div><div style="display:flex; gap:12px; margin-top:20px;"><button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;">Add Product</button><button class="btn-delete" onclick="closeAddProductModal()" style="flex:1;">Cancel</button></div></div></div>`;
+        const existing = document.getElementById('addProductModal'); if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    window.closeAddProductModal = () => { const m = document.getElementById('addProductModal'); if (m) m.remove(); };
+    window.submitAddProduct = async () => {
+        const name = document.getElementById('addName')?.value;
+        const animal = document.getElementById('addAnimal')?.value;
+        const stockKg = roundToTwo(parseFloat(document.getElementById('addStock')?.value));
+        const priceKg = roundToTwo(parseFloat(document.getElementById('addPrice')?.value));
+        let costKg = roundToTwo(parseFloat(document.getElementById('addCost')?.value));
+        const lowStockAlert = parseFloat(document.getElementById('addAlert')?.value) || 10;
+        if (!name || isNaN(stockKg) || isNaN(priceKg)) { alert('Please fill all required fields (Name, Stock, Price)'); return; }
+        if (isNaN(costKg)) costKg = priceKg * 0.7;
+        const result = await apiCall('/api/inventory', 'POST', { name, animal, stockKg, priceKg, costKg, lowStockAlert });
+        if (result) { closeAddProductModal(); await loadAllData(); renderApp(); alert(`✅ Product "${name}" added successfully!`); }
+        else { alert('Failed to add product. Please try again.'); }
+    };
+    
+    window.deleteInventoryProduct = async (productId) => {
+        if (!canDelete()) return alert('Only Super Admin can delete products');
+        const product = inventory.find(p => p.id === productId);
+        if (product && confirm(`Delete "${product.name}"?`)) { await apiCall(`/api/inventory/${productId}`, 'DELETE'); await loadAllData(); renderApp(); alert('✅ Product deleted'); }
     };
     
     window.openEditSelfModal = () => {
         const user = currentUser;
-        const modalHtml = `<div class="modal" id="editSelfModal"><div class="modal-content"><div class="modal-header"><h3><i class="fas fa-user-edit"></i> Edit Your Profile</h3><button class="close-modal" onclick="closeEditSelfModal()">&times;</button></div>
-            <div class="form-group"><label>Full Name</label><input type="text" id="editSelfFullName" value="${user.fullName.replace(/['"]/g, '&quot;')}"></div>
-            <div class="form-group"><label>Email</label><input type="email" id="editSelfEmail" value="${user.email || ''}"></div>
-            <div class="form-group"><label>Phone</label><input type="text" id="editSelfPhone" value="${user.phone || ''}"></div>
-            <div class="form-group"><label>New Password (leave blank to keep current)</label><input type="password" id="editSelfPassword" placeholder="Enter new password"></div>
-            <div class="form-group"><label>Confirm New Password</label><input type="password" id="editSelfConfirmPassword" placeholder="Confirm new password"></div>
-            <div style="display:flex; gap:12px; margin-top:10px;"><button class="btn btn-success" onclick="saveEditSelf()" style="flex:1;">Save Changes</button><button class="btn-delete" onclick="closeEditSelfModal()" style="flex:1;">Cancel</button></div></div></div>`;
-        const existing = document.getElementById('editSelfModal'); if(existing) existing.remove();
+        const modalHtml = `<div class="modal" id="editSelfModal"><div class="modal-content"><div class="modal-header"><h3><i class="fas fa-user-edit"></i> Edit Your Profile</h3><button class="close-modal" onclick="closeEditSelfModal()">&times;</button></div><div class="form-group"><label>Full Name</label><input type="text" id="editSelfFullName" value="${user.fullName.replace(/['"]/g, '&quot;')}"></div><div class="form-group"><label>Email</label><input type="email" id="editSelfEmail" value="${user.email || ''}"></div><div class="form-group"><label>Phone</label><input type="text" id="editSelfPhone" value="${user.phone || ''}"></div><div class="form-group"><label>New Password (leave blank to keep current)</label><input type="password" id="editSelfPassword" placeholder="Enter new password"></div><div class="form-group"><label>Confirm New Password</label><input type="password" id="editSelfConfirmPassword" placeholder="Confirm new password"></div><div style="display:flex; gap:12px; margin-top:10px;"><button class="btn btn-success" onclick="saveEditSelf()" style="flex:1;">Save Changes</button><button class="btn-delete" onclick="closeEditSelfModal()" style="flex:1;">Cancel</button></div></div></div>`;
+        const existing = document.getElementById('editSelfModal'); if (existing) existing.remove();
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     };
-    
-    window.closeEditSelfModal = () => { const m = document.getElementById('editSelfModal'); if(m) m.remove(); };
-    
+    window.closeEditSelfModal = () => { const m = document.getElementById('editSelfModal'); if (m) m.remove(); };
     window.saveEditSelf = async () => {
         const newPassword = document.getElementById('editSelfPassword')?.value;
         const confirmPassword = document.getElementById('editSelfConfirmPassword')?.value;
         if (newPassword && newPassword !== confirmPassword) { alert('Passwords do not match!'); return; }
         if (newPassword && newPassword.length < 4) { alert('Password must be at least 4 characters'); return; }
-        
-        const updatedData = {
-            fullName: document.getElementById('editSelfFullName')?.value,
-            email: document.getElementById('editSelfEmail')?.value,
-            phone: document.getElementById('editSelfPhone')?.value
-        };
+        const updatedData = { fullName: document.getElementById('editSelfFullName')?.value, email: document.getElementById('editSelfEmail')?.value, phone: document.getElementById('editSelfPhone')?.value };
         if (newPassword) updatedData.password = newPassword;
-        
         const result = await apiCall(`/api/users/${currentUser.id}`, 'PUT', updatedData);
-        if (result) {
-            await loadAllData();
-            closeEditSelfModal();
-            renderApp();
-            alert('✅ Your profile has been updated!');
-        }
+        if (result) { await loadAllData(); closeEditSelfModal(); renderApp(); alert('✅ Your profile has been updated!'); }
     };
     
     window.showCreateAccountForm = () => { showCreateAccount = true; renderApp(); };
     window.hideCreateAccountForm = () => { showCreateAccount = false; renderApp(); };
-    
     window.submitCreateAccount = async () => {
         const fullName = document.getElementById('createFullName')?.value;
         const username = document.getElementById('createUsername')?.value;
@@ -888,47 +589,29 @@
         const confirm = document.getElementById('createConfirmPassword')?.value;
         const email = document.getElementById('createEmail')?.value;
         const phone = document.getElementById('createPhone')?.value;
-        
         if (!fullName || !username || !password) { alert('Please fill all required fields'); return; }
         if (password !== confirm) { alert('Passwords do not match!'); return; }
         if (password.length < 4) { alert('Password must be at least 4 characters'); return; }
-        
         const result = await apiCall('/api/users', 'POST', { username, password, fullName, role: 'admin', email, phone });
-        if (result) {
-            showCreateAccount = false;
-            renderApp();
-            alert(`✅ Account created!\nUsername: ${username}\nPassword: ${password}`);
-        } else {
-            alert('Username already exists!');
-        }
+        if (result) { showCreateAccount = false; renderApp(); alert(`✅ Account created!\nUsername: ${username}\nPassword: ${password}`); }
+        else { alert('Username already exists!'); }
     };
     
-    window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.5.0 (Fixed Admin Sales)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
-    };
+    window.showVersionInfo = () => { alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.6.0 (Proper Sales Workflow)\n\nWorkflow: Select Date → Add Sales → View Sales → Close Day\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`); };
     
     function renderDashboard() {
         const totalInventoryValue = inventory.reduce((sum, i) => sum + (i.stockKg * i.costKg), 0);
         const todayTotal = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
         const lowStock = inventory.filter(i => i.stockKg <= i.lowStockAlert).length;
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         const weeklyRevenue = dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).reduce((sum, r) => sum + r.totalRevenue, 0);
-        
-        return `<div class="stats-grid">
-            <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${todayTotal.toLocaleString()}</div><div class="stat-change">💰 Cash: ${currentDaySales.cashAmount.toLocaleString()}</div><div class="stat-change">📱 M-Pesa: ${currentDaySales.mpesaAmount.toLocaleString()}</div><div class="stat-change">🥩 ${roundToTwo(currentDaySales.totalKg)} kg sold</div></div>
-            <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${roundToTwo(totalInventoryValue).toLocaleString()}</div></div>
-            <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div></div>
-            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${roundToTwo(weeklyRevenue).toLocaleString()}</div></div>
-        </div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
+        return `<div class="stats-grid"><div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${todayTotal.toLocaleString()}</div><div class="stat-change">💰 Cash: ${currentDaySales.cashAmount.toLocaleString()}</div><div class="stat-change">📱 M-Pesa: ${currentDaySales.mpesaAmount.toLocaleString()}</div><div class="stat-change">🥩 ${roundToTwo(currentDaySales.totalKg)} kg sold</div></div><div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${roundToTwo(totalInventoryValue).toLocaleString()}</div></div><div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div></div><div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${roundToTwo(weeklyRevenue).toLocaleString()}</div></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
     }
     
     function renderReports() {
         let filtered = getFilteredClosings();
         const totalRevenue = filtered.reduce((sum, r) => sum + r.totalRevenue, 0);
         const totalKg = filtered.reduce((sum, r) => sum + r.totalKg, 0);
-        
         const filteredExpenses = expenses.filter(e => {
             const expenseDate = new Date(e.date);
             const start = reportStartDate ? new Date(reportStartDate) : null;
@@ -941,37 +624,26 @@
         const totalProfit = totalRevenue - totalExpenses;
         const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
         const profitCardClass = totalProfit >= 0 ? 'profit-card' : 'loss-card';
-        
         const chartLabels = filtered.map(r => r.date).reverse();
         const chartRevenue = filtered.map(r => r.totalRevenue).reverse();
-        
         if (revenueChart) revenueChart.destroy();
         if (profitChart) profitChart.destroy();
-        
         setTimeout(() => {
             const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
             const profitCtx = document.getElementById('profitChart')?.getContext('2d');
-            if (revenueCtx) {
-                revenueChart = new Chart(revenueCtx, { type: 'line', data: { labels: chartLabels, datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4 }] }, options: { responsive: true } });
-            }
+            if (revenueCtx) { revenueChart = new Chart(revenueCtx, { type: 'line', data: { labels: chartLabels, datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4 }] }, options: { responsive: true } }); }
             if (profitCtx && filtered.length > 0) {
                 const dailyProfits = filtered.map(r => { const dayExpenses = filteredExpenses.filter(e => e.date === r.date).reduce((sum, e) => sum + e.amount, 0); return r.totalRevenue - dayExpenses; }).reverse();
                 profitChart = new Chart(profitCtx, { type: 'bar', data: { labels: chartLabels, datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }] }, options: { responsive: true } });
             }
         }, 100);
-        
-        return `<div class="report-selector"><div class="date-range"><label>📅 From:</label><input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()"><label>To:</label><input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()"><button class="btn-edit" onclick="resetDateRange()">Reset</button></div><div style="display: flex; gap: 10px;"><button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button><button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button></div></div>
-        <div class="stats-grid"><div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundToTwo(totalRevenue).toLocaleString()}</div></div><div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div><div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundToTwo(totalExpenses).toLocaleString()}</div></div><div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundToTwo(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div></div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div><div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div></div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div><div class="chart-container"><canvas id="profitChart" height="200"></canvas></div></div>
-        ${filtered.length === 0 ? `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>` : `
-        <div class="card"><div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div></div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
+        return `<div class="report-selector"><div class="date-range"><label>📅 From:</label><input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()"><label>To:</label><input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()"><button class="btn-edit" onclick="resetDateRange()">Reset</button></div><div style="display: flex; gap: 10px;"><button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button><button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button></div></div><div class="stats-grid"><div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundToTwo(totalRevenue).toLocaleString()}</div></div><div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div><div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundToTwo(totalExpenses).toLocaleString()}</div></div><div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundToTwo(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div><div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div></div><div class="card"><div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div><div class="chart-container"><canvas id="profitChart" height="200"></canvas></div></div>${filtered.length === 0 ? `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>` : `<div class="card"><div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div></div><div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
     }
     
     function renderSales() {
         const productOptions = inventory.map(p => `<option value="${p.id}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${p.priceKg}/kg</option>`).join('');
         const isClosed = currentDaySales.isClosed;
+        const salesList = currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0;
         
         return `<div class="sales-panel">
             <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${roundToTwo(currentDaySales.totalKg)} kg</div></div>
@@ -980,13 +652,18 @@
         </div>
         
         <div class="card">
-            <div class="card-header"><h2>📅 Select Date & Record Sale</h2></div>
+            <div class="card-header"><h2>📅 Step 1: Select Date</h2></div>
             <div class="date-selector">
                 <label><i class="fas fa-calendar-alt"></i> Sale Date:</label>
                 <input type="date" id="salesDatePicker" value="${selectedSalesDate}" onchange="changeSalesDate()">
                 <span class="alert-info" style="margin:0; padding:5px 10px;">Status: ${isClosed ? '🔒 Closed' : '🟢 Open'}</span>
-                ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is closed. Start a new day to record sales.</span>' : ''}
+                ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is closed. Click "Start New Day" to open it.</span>' : ''}
             </div>
+        </div>
+        
+        ${!isClosed ? `
+        <div class="card">
+            <div class="card-header"><h2>🛒 Step 2: Record Sale</h2></div>
             <div class="form-group">
                 <label>🥩 Select Product</label>
                 <select id="saleProduct" class="product-select" onchange="onProductChange()">
@@ -1009,12 +686,11 @@
             </div>
             <div class="action-buttons">
                 <button class="btn btn-success" onclick="addSale()"><i class="fas fa-plus-circle"></i> Add Sale</button>
-                <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>
-                <button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button>
             </div>
         </div>
+        ` : ''}
         
-        ${currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0 ? `
+        ${salesList ? `
         <div class="card">
             <div class="card-header"><h2>📊 Sales for ${selectedSalesDate}</h2></div>
             <div class="table-container">
@@ -1028,18 +704,32 @@
                             return `<tr><td style="padding:8px">${product}</td><td style="padding:8px">${roundToTwo(kg).toFixed(2)} kg</td><td style="padding:8px">KES ${roundToTwo(revenue).toLocaleString()} (${pricePerKg}/kg)</td><td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td></tr>`;
                         }).join('')}
                     </tbody>
-                </table>
+                <tr>
+                <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
         </div>
-        ` : `<div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. Select a product and add sale above.</div>`}
+        ` : (!isClosed ? `<div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. Select a product and add sale above.</div>` : '')}
         
-        <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Change the date above to record sales for any day, past or present!</div>`;
+        <div class="closing-section">
+            <div class="action-buttons">
+                <button class="btn btn-warning" onclick="closeDay()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-lock"></i> Step 3: Close Day</button>
+                <button class="btn" onclick="startNewDay()"><i class="fas fa-sun"></i> Start New Day</button>
+            </div>
+            <div class="alert-info" style="margin-top:15px;">
+                <i class="fas fa-info-circle"></i> <strong>Workflow:</strong><br>
+                1️⃣ Select a date above<br>
+                2️⃣ Add all sales for that day (repeat for multiple products)<br>
+                3️⃣ Click "Close Day" when all sales are recorded<br>
+                <br>
+                <strong>Note:</strong> Once a day is closed, you cannot add or delete sales for that day.
+            </div>
+        </div>`;
     }
     
     function renderExpenses() {
         const today = new Date().toISOString().split('T')[0];
         return `<div class="card"><div class="card-header"><h2>💰 Add Expense</h2></div><div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div><div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div><div class="form-group"><label>Date</label><input id="expenseDate" type="date" value="${today}"></div><div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div><button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button></div>
-        <div class="card"><div class="card-header"><h2>📋 Expense History</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th><tr></thead><tbody>${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div></div>`;
+        <div class="card"><div class="card-header"><h2>📋 Expense History</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead><tbody>${expenses.length === 0 ? '</td><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>`).join('')}</tbody>}</div></div>`;
     }
     
     function renderInventory() {
@@ -1051,42 +741,25 @@
     }
     
     function renderLogs() {
-        return `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<td><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`;
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td></tr>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`;
     }
     
     async function renderApp() {
         const app = document.getElementById('app');
-        
         if (!token || !currentUser) {
             const savedToken = localStorage.getItem('token');
             if (savedToken) {
                 token = savedToken;
                 const me = await apiCall('/api/me');
-                if (me) {
-                    currentUser = me;
-                    await loadAllData();
-                    renderApp();
-                    return;
-                } else {
-                    token = null;
-                    localStorage.removeItem('token');
-                }
+                if (me) { currentUser = me; await loadAllData(); renderApp(); return; }
+                else { token = null; localStorage.removeItem('token'); }
             }
-            
             app.innerHTML = `<div class="login-container"><i class="fas fa-drumstick-bite" style="font-size:48px; color:#3b82f6;"></i><h2 style="margin:20px 0;">Bismillah Butchery Pro</h2><div class="form-group"><label>Username</label><input type="text" id="loginUsername" placeholder="Enter your username"></div><div class="form-group"><div class="password-wrapper"><label>Password</label><input type="password" id="loginPasswordInput" placeholder="Enter your password"><button class="password-toggle" onclick="toggleLoginPassword()" type="button"><i class="fas fa-eye"></i></button></div></div><button class="btn" style="width:100%;" onclick="login(document.getElementById('loginUsername').value, document.getElementById('loginPasswordInput').value)">Login</button><button class="create-account-btn" onclick="showCreateAccountForm()" style="margin-top:15px; background:none; border:none; color:#3b82f6; cursor:pointer;">+ Create New Account</button>${showCreateAccount ? `<div class="modal"><div class="modal-content"><h3>Create Admin Account</h3><input type="text" id="createFullName" placeholder="Full Name *" style="margin:10px 0; width:100%;"><input type="text" id="createUsername" placeholder="Username *" style="margin:10px 0; width:100%;"><input type="password" id="createPassword" placeholder="Password *" style="margin:10px 0; width:100%;"><input type="password" id="createConfirmPassword" placeholder="Confirm Password *" style="margin:10px 0; width:100%;"><input type="email" id="createEmail" placeholder="Email (Optional)" style="margin:10px 0; width:100%;"><input type="tel" id="createPhone" placeholder="Phone (Optional)" style="margin:10px 0; width:100%;"><button class="btn btn-success" onclick="submitCreateAccount()" style="width:100%;">Register</button><button class="btn-delete" onclick="hideCreateAccountForm()" style="margin-top:10px; width:100%;">Cancel</button></div></div>` : ''}</div>`;
             return;
         }
-        
-        const navItems = [
-            { id: 'dashboard', icon: 'fa-chart-line', label: 'Dashboard' },
-            { id: 'sales', icon: 'fa-cash-register', label: 'Today\'s Sales' },
-            { id: 'inventory', icon: 'fa-boxes', label: 'Inventory' },
-            { id: 'expenses', icon: 'fa-receipt', label: 'Expenses' },
-            { id: 'reports', icon: 'fa-chart-bar', label: 'Reports' }
-        ];
+        const navItems = [{ id: 'dashboard', icon: 'fa-chart-line', label: 'Dashboard' }, { id: 'sales', icon: 'fa-cash-register', label: 'Today\'s Sales' }, { id: 'inventory', icon: 'fa-boxes', label: 'Inventory' }, { id: 'expenses', icon: 'fa-receipt', label: 'Expenses' }, { id: 'reports', icon: 'fa-chart-bar', label: 'Reports' }];
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
-        
         app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
     }
     
@@ -1095,13 +768,8 @@
         if (savedToken) {
             token = savedToken;
             const me = await apiCall('/api/me');
-            if (me) {
-                currentUser = me;
-                await loadAllData();
-            } else {
-                token = null;
-                localStorage.removeItem('token');
-            }
+            if (me) { currentUser = me; await loadAllData(); }
+            else { token = null; localStorage.removeItem('token'); }
         }
         renderApp();
     })();
