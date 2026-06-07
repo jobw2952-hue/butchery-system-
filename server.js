@@ -58,6 +58,7 @@ function addActivityLog(userName, userRole, action, details) {
             if (err) console.error('Error adding activity log:', err);
         });
     
+    // Clean up old logs (keep only last 500 records)
     db.run(`DELETE FROM activity_logs WHERE id NOT IN (SELECT id FROM activity_logs ORDER BY id DESC LIMIT 500)`);
 }
 
@@ -123,7 +124,7 @@ db.serialize(() => {
         details TEXT
     )`);
     
-    // Insert default users
+    // Insert default users if not exists
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync('admin123', salt);
     
@@ -145,7 +146,7 @@ db.serialize(() => {
         }
     });
     
-    // Insert default inventory
+    // Insert default inventory if empty
     db.get("SELECT COUNT(*) as count FROM inventory", (err, row) => {
         if (row && row.count === 0) {
             const defaultInventory = [
@@ -215,6 +216,7 @@ app.post('/api/login', (req, res) => {
             return res.status(401).json({ error: 'Invalid username or password' });
         }
         
+        // Update last login
         db.run("UPDATE users SET lastLogin = ? WHERE id = ?", [getLocalTimestamp(), user.id]);
         
         const token = jwt.sign(
@@ -258,7 +260,13 @@ app.get('/api/inventory', authenticateToken, (req, res) => {
         if (err) {
             return res.status(500).json({ error: err.message });
         }
-        res.json(inventory || []);
+        const roundedInventory = inventory.map(i => ({
+            ...i,
+            stockKg: roundToTwo(i.stockKg),
+            priceKg: roundToTwo(i.priceKg),
+            costKg: roundToTwo(i.costKg)
+        }));
+        res.json(roundedInventory || []);
     });
 });
 
@@ -388,7 +396,7 @@ app.get('/api/current-sales', authenticateToken, (req, res) => {
     });
 });
 
-// Update current sales with date support - FIXED VERSION
+// Update current sales with date support
 app.post('/api/current-sales', authenticateToken, (req, res) => {
     let { kg, cash, mpesa, productId, productName, date } = req.body;
     
@@ -398,53 +406,61 @@ app.post('/api/current-sales', authenticateToken, (req, res) => {
     mpesa = roundToTwo(mpesa);
     const saleDate = date || new Date().toISOString().split('T')[0];
     
-    db.get("SELECT salesByProduct, totalKg, cashAmount, mpesaAmount FROM current_day_sales WHERE date = ?", [saleDate], (err, current) => {
-        let salesByProduct = {};
-        let currentTotalKg = 0;
-        let currentCash = 0;
-        let currentMpesa = 0;
-        
-        if (current) {
-            try {
-                salesByProduct = JSON.parse(current.salesByProduct || '{}');
-            } catch(e) {}
-            currentTotalKg = current.totalKg || 0;
-            currentCash = current.cashAmount || 0;
-            currentMpesa = current.mpesaAmount || 0;
+    // First check if day is closed
+    db.get("SELECT isClosed FROM current_day_sales WHERE date = ?", [saleDate], (err, dayStatus) => {
+        if (dayStatus && dayStatus.isClosed === 1) {
+            return res.status(400).json({ error: 'This day is already closed. Cannot add sales.' });
         }
         
-        if (productName) {
-            const existingKg = salesByProduct[productName] || 0;
-            salesByProduct[productName] = roundToTwo(existingKg + kg);
-        }
-        
-        const salesByProductStr = JSON.stringify(salesByProduct);
-        const newTotalKg = roundToTwo(currentTotalKg + kg);
-        const newCash = roundToTwo(currentCash + cash);
-        const newMpesa = roundToTwo(currentMpesa + mpesa);
-        
-        db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
-            const userName = user ? user.fullName : req.user.username;
+        db.get("SELECT salesByProduct, totalKg, cashAmount, mpesaAmount FROM current_day_sales WHERE date = ?", [saleDate], (err, current) => {
+            let salesByProduct = {};
+            let currentTotalKg = 0;
+            let currentCash = 0;
+            let currentMpesa = 0;
             
-            db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, ?, ?, ?, 0, ?)`,
-                [saleDate, newTotalKg, newCash, newMpesa, salesByProductStr], (err) => {
-                    if (err) {
-                        console.error('Database error:', err);
-                        return res.status(400).json({ error: 'Update failed' });
-                    }
-                    
-                    if (productId && productName) {
-                        db.run(`UPDATE inventory SET stockKg = round(stockKg - ?, 2) WHERE id = ?`, [kg, productId]);
-                    }
-                    
-                    addActivityLog(userName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName || 'product'} on ${saleDate}, Cash: ${cash}, M-Pesa: ${mpesa}`);
-                    res.json({ message: 'Sales updated' });
-                });
+            if (current) {
+                try {
+                    salesByProduct = JSON.parse(current.salesByProduct || '{}');
+                } catch(e) {}
+                currentTotalKg = current.totalKg || 0;
+                currentCash = current.cashAmount || 0;
+                currentMpesa = current.mpesaAmount || 0;
+            }
+            
+            if (productName) {
+                const existingKg = salesByProduct[productName] || 0;
+                salesByProduct[productName] = roundToTwo(existingKg + kg);
+            }
+            
+            const salesByProductStr = JSON.stringify(salesByProduct);
+            const newTotalKg = roundToTwo(currentTotalKg + kg);
+            const newCash = roundToTwo(currentCash + cash);
+            const newMpesa = roundToTwo(currentMpesa + mpesa);
+            
+            db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
+                const userName = user ? user.fullName : req.user.username;
+                
+                db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, ?, ?, ?, 0, ?)`,
+                    [saleDate, newTotalKg, newCash, newMpesa, salesByProductStr], (err) => {
+                        if (err) {
+                            console.error('Database error:', err);
+                            return res.status(400).json({ error: 'Update failed' });
+                        }
+                        
+                        // Update inventory stock
+                        if (productId && productName) {
+                            db.run(`UPDATE inventory SET stockKg = round(stockKg - ?, 2) WHERE id = ?`, [kg, productId]);
+                        }
+                        
+                        addActivityLog(userName, req.user.role, 'Sales Update', `Sold ${kg}kg of ${productName || 'product'} on ${saleDate}, Cash: ${cash}, M-Pesa: ${mpesa}`);
+                        res.json({ message: 'Sales updated' });
+                    });
+            });
         });
     });
 });
 
-// Close day with date support - FIXED VERSION
+// Close day with date support
 app.post('/api/close-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
     
@@ -474,12 +490,16 @@ app.post('/api/close-day', authenticateToken, (req, res) => {
 // Start new day with date support
 app.post('/api/new-day', authenticateToken, (req, res) => {
     const date = req.body.date || new Date().toISOString().split('T')[0];
+    
+    // Insert or replace with fresh data
     db.run(`INSERT OR REPLACE INTO current_day_sales (date, totalKg, cashAmount, mpesaAmount, isClosed, salesByProduct) VALUES (?, 0, 0, 0, 0, '{}')`, [date]);
+    
     db.get("SELECT fullName FROM users WHERE id = ?", [req.user.id], (err, user) => {
         const userName = user ? user.fullName : req.user.username;
         addActivityLog(userName, req.user.role, 'New Day', `Started new day for ${date}`);
     });
-    res.json({ message: 'New day started' });
+    
+    res.json({ message: 'New day started', date: date });
 });
 
 // Delete sale entry with date support
@@ -492,17 +512,15 @@ app.post('/api/delete-sale', authenticateToken, (req, res) => {
         return res.status(400).json({ error: 'Product name and quantity required' });
     }
     
-    db.get("SELECT salesByProduct, totalKg, cashAmount, mpesaAmount FROM current_day_sales WHERE date = ? AND isClosed = 0", [saleDate], (err, current) => {
+    db.get("SELECT salesByProduct, totalKg FROM current_day_sales WHERE date = ? AND isClosed = 0", [saleDate], (err, current) => {
         if (err || !current) {
             return res.status(400).json({ error: 'No active day or sale not found' });
         }
         
         let salesByProduct = {};
-        if (current.salesByProduct) {
-            try {
-                salesByProduct = JSON.parse(current.salesByProduct);
-            } catch(e) {}
-        }
+        try {
+            salesByProduct = JSON.parse(current.salesByProduct || '{}');
+        } catch(e) {}
         
         if (!salesByProduct[productName]) {
             return res.status(400).json({ error: 'Sale entry not found' });
