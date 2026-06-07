@@ -596,7 +596,7 @@
 <div class="version-badge" onclick="showVersionInfo()">v9.0.0 🚀 FINAL - No Start Button</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - FINAL VERSION ==========
+    // ========== BISMILAH BUTCHERY PRO - COMPLETE WORKING VERSION ==========
     
     function roundToTwo(num) {
         if (isNaN(num)) return 0;
@@ -722,9 +722,12 @@
         const datePicker = document.getElementById('salesDatePicker');
         if (datePicker) {
             selectedSalesDate = datePicker.value;
+            // Open the selected date automatically (start day)
             await ensureDayIsOpen(selectedSalesDate);
             await loadSalesForDate(selectedSalesDate);
             renderApp();
+            // Show confirmation to user
+            alert(`📅 Working date changed to ${selectedSalesDate}\n\nYou can now add multiple products for this day.`);
         }
     };
     
@@ -790,7 +793,7 @@
             await loadSalesForDate(saleDate);
             await loadAllData();
             renderApp();
-            alert(`✅ Sold ${kg}kg of ${product.name} on ${saleDate}!`);
+            alert(`✅ Added ${kg}kg of ${product.name} to ${saleDate}!`);
             document.getElementById('dailyKg').value = '';
             document.getElementById('dailyCash').value = '';
             document.getElementById('dailyMpesa').value = '';
@@ -872,7 +875,7 @@
         }).reduce((sum, e) => sum + e.amount, 0);
         const totalProfit = totalRevenue - totalExpenses;
         const printWindow = window.open('', '_blank');
-        printWindow.document.write(`<html><head><title>Butchery Sales Report</title><style>body{font-family:Arial,sans-serif;padding:20px;}h1{color:#1e293b;text-align:center;}.summary{display:flex;gap:20px;margin:20px 0;flex-wrap:wrap;}.summary-box{background:#f1f5f9;padding:15px;border-radius:8px;flex:1;text-align:center;}.summary-box .value{font-size:24px;font-weight:bold;color:#3b82f6;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f8fafc;}.profit{color:#10b981;}.loss{color:#ef4444;}</style></head><body><h1>Bismillah Butchery Pro - Sales Report</h1><p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p><div class="summary"><div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div><div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div><div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div><div class="summary-box ${totalProfit >= 0 ? 'profit' : 'loss'}"><h3>Total Profit</h3><div class="value">KES ${totalProfit.toLocaleString()}</div></div></div><tr><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}</tbody></table><p style="margin-top:20px;text-align:center;">Generated on ${new Date().toLocaleString()}</p><button onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;">Print / Save as PDF</button></body></html>`);
+        printWindow.document.write(`<html><head><title>Butchery Sales Report</title><style>body{font-family:Arial,sans-serif;padding:20px;}h1{color:#1e293b;text-align:center;}.summary{display:flex;gap:20px;margin:20px 0;flex-wrap:wrap;}.summary-box{background:#f1f5f9;padding:15px;border-radius:8px;flex:1;text-align:center;}.summary-box .value{font-size:24px;font-weight:bold;color:#3b82f6;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f8fafc;}.profit{color:#10b981;}.loss{color:#ef4444;}</style></head><body><h1>Bismillah Butchery Pro - Sales Report</h1><p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p><div class="summary"><div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div><div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div><div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div><div class="summary-box ${totalProfit >= 0 ? 'profit' : 'loss'}"><h3>Total Profit</h3><div class="value">KES ${totalProfit.toLocaleString()}</div></div></div></table><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}</tbody>}</table><p style="margin-top:20px;text-align:center;">Generated on ${new Date().toLocaleString()}</p><button onclick="window.print()" style="margin-top:20px;padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;">Print / Save as PDF</button></body></html>`);
         printWindow.document.close();
     };
     
@@ -1118,33 +1121,47 @@
         <div class="card"><div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div><div class="chart-container"><canvas id="profitChart" height="200"></canvas></div></div>
         ${filtered.length === 0 ? `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>` : `
         <div class="card"><div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead><tbody>${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}</tbody>}</div></div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</div>' : filteredExpenses.map(e => `<td><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
+        <div class="card"><div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div><div class="table-container"><table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead><tbody>${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td></tr>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}</tbody>}</div></div>`}`;
     }
     
     function renderSales() {
         const productOptions = inventory.map(p => `<option value="${p.id}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${p.priceKg}/kg</option>`).join('');
         const isClosed = currentDaySales.isClosed;
-        const salesList = currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0;
+        const hasSales = currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0;
         
-        return `<div class="sales-panel">
-            <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${roundToTwo(currentDaySales.totalKg)} kg</div></div>
-            <div class="sales-card"><h3>💰 Cash</h3><div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div></div>
-            <div class="sales-card"><h3>📱 M-Pesa</h3><div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div></div>
-        </div>
+        // Calculate total revenue from sales
+        let totalRevenue = 0;
+        const salesDetails = [];
+        if (hasSales) {
+            for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
+                const productInfo = inventory.find(p => p.name === product);
+                const price = productInfo?.priceKg || 0;
+                const revenue = kg * price;
+                totalRevenue += revenue;
+                salesDetails.push({ product, kg, revenue, price });
+            }
+        }
         
+        return `
         <div class="card">
-            <div class="card-header"><h2>📅 Select Date</h2></div>
+            <div class="card-header">
+                <h2><i class="fas fa-calendar-alt"></i> Select Working Date</h2>
+            </div>
             <div class="date-selector">
-                <label><i class="fas fa-calendar-alt"></i> Sale Date:</label>
+                <label>📅 Sale Date (Start Day):</label>
                 <input type="date" id="salesDatePicker" value="${selectedSalesDate}" onchange="changeSalesDate()">
-                <span class="alert-info" style="margin:0; padding:5px 10px;">Status: ${isClosed ? '🔒 Closed' : '🟢 Open'}</span>
-                ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is closed. Select a different date.</span>' : ''}
+                <span class="alert-info" style="margin:0; padding:5px 10px;">
+                    Status: ${isClosed ? '🔒 Closed' : '🟢 Open for Sales'}
+                </span>
+                ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is closed. Pick another date.</span>' : '<span style="color:#10b981; margin-left:10px;"><i class="fas fa-check-circle"></i> You can add multiple products below</span>'}
             </div>
         </div>
         
         ${!isClosed ? `
         <div class="card">
-            <div class="card-header"><h2>🛒 Record Sale</h2></div>
+            <div class="card-header">
+                <h2><i class="fas fa-plus-circle"></i> Add Sale for ${selectedSalesDate}</h2>
+            </div>
             <div class="form-group">
                 <label>🥩 Select Product</label>
                 <select id="saleProduct" class="product-select" onchange="onProductChange()">
@@ -1162,50 +1179,90 @@
             </div>
             <div class="form-group">
                 <label>📦 Quantity Sold (kg) - Auto Calculated</label>
-                <input type="number" id="dailyKg" step="0.1" placeholder="Auto-calculated" readonly style="background-color:#f3f4f6; cursor:not-allowed;">
-                <div class="calc-note"><i class="fas fa-calculator"></i> KG is automatically calculated from Cash + M-Pesa divided by product price</div>
+                <input type="number" id="dailyKg" step="0.1" placeholder="Auto-calculated from amount" readonly style="background-color:#f3f4f6; cursor:not-allowed;">
+                <div class="calc-note"><i class="fas fa-calculator"></i> KG = (Cash + M-Pesa) ÷ Product Price</div>
             </div>
             <div class="action-buttons">
-                <button class="btn btn-success" onclick="addSale()"><i class="fas fa-plus-circle"></i> Add Sale</button>
+                <button class="btn btn-success" onclick="addSale()"><i class="fas fa-cart-plus"></i> Add to Today's Sales</button>
             </div>
         </div>
         ` : ''}
         
-        ${salesList ? `
         <div class="card">
-            <div class="card-header"><h2>📊 Sales for ${selectedSalesDate}</h2></div>
+            <div class="card-header">
+                <h2><i class="fas fa-list"></i> Sales for ${selectedSalesDate}</h2>
+                ${hasSales ? `<span class="role-badge">${Object.keys(currentDaySales.salesByProduct).length} Product(s) Added</span>` : ''}
+            </div>
+            ${hasSales ? `
             <div class="table-container">
                 <table class="data-table">
-                    <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Revenue (KES)</th><th>Action</th></td></thead>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Quantity (kg)</th>
+                            <th>Price/kg (KES)</th>
+                            <th>Revenue (KES)</th>
+                            ${!isClosed ? '<th>Action</th>' : ''}
+                        </tr>
+                    </thead>
                     <tbody>
-                        ${Object.entries(currentDaySales.salesByProduct).map(([product, kg]) => {
-                            const productInfo = inventory.find(p => p.name === product);
-                            const pricePerKg = productInfo?.priceKg || 0;
-                            const revenue = kg * pricePerKg;
-                            return `<tr><td style="padding:8px">${product}</td><td style="padding:8px">${roundToTwo(kg).toFixed(2)} kg</td><td style="padding:8px">KES ${roundToTwo(revenue).toLocaleString()} (${pricePerKg}/kg)</td><td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td></tr>`;
-                        }).join('')}
+                        ${salesDetails.map(item => `
+                        <tr>
+                            <td style="padding:8px">${item.product}</td>
+                            <td style="padding:8px"><strong>${roundToTwo(item.kg)} kg</strong></td>
+                            <td style="padding:8px">KES ${item.price}</td>
+                            <td style="padding:8px">KES ${roundToTwo(item.revenue).toLocaleString()}</td>
+                            ${!isClosed ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${item.product.replace(/'/g, "\\'")}', ${item.kg})">Remove</button></td>` : ''}
+                        </tr>
+                        `).join('')}
+                        <tr style="background-color: #f0fdf4; font-weight: bold;">
+                            <td colspan="3" style="text-align: right; padding: 12px;">TOTAL REVENUE:</td>
+                            <td colspan="2" style="padding: 12px; color: #10b981;">KES ${roundToTwo(totalRevenue).toLocaleString()}</td>
+                        </tr>
                     </tbody>
                 </table>
-                <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
+            <div class="sales-panel" style="margin-top: 20px;">
+                <div class="sales-card">
+                    <h3>📦 Total KG Sold</h3>
+                    <div class="amount">${roundToTwo(currentDaySales.totalKg)} kg</div>
+                </div>
+                <div class="sales-card">
+                    <h3>💰 Cash Collected</h3>
+                    <div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div>
+                </div>
+                <div class="sales-card">
+                    <h3>📱 M-Pesa Received</h3>
+                    <div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div>
+                </div>
+            </div>
+            ` : `
+            <div class="empty-state">
+                <i class="fas fa-shopping-cart"></i>
+                <h3>No Sales Yet for ${selectedSalesDate}</h3>
+                <p>${!isClosed ? 'Select a product above and add your first sale.' : 'This day is closed. Pick another date to add sales.'}</p>
+            </div>
+            `}
         </div>
-        ` : (!isClosed ? `<div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. Select a product and add sale above.</div>` : '')}
         
-        ${!isClosed ? `
+        ${!isClosed && hasSales ? `
         <div class="closing-section">
-            <div class="action-buttons">
-                <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>
+            <div class="alert-info" style="margin-bottom: 15px; background: #fef3c7; color: #92400e;">
+                <i class="fas fa-info-circle"></i> <strong>Ready to close ${selectedSalesDate}?</strong><br>
+                Make sure you have added ALL products sold today. Once closed, you cannot add more sales for this day.
             </div>
-            <div class="alert-info" style="margin-top:15px;">
-                <i class="fas fa-info-circle"></i> <strong>How to use:</strong><br>
-                1️⃣ Select a date above<br>
-                2️⃣ Add all sales for that day (repeat for multiple products)<br>
-                3️⃣ Click "Close Day" when all sales are recorded<br>
-                <br>
-                <strong>Note:</strong> The day opens automatically when you select it. Once closed, you cannot add more sales.
+            <div class="action-buttons">
+                <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> CLOSE DAY ${selectedSalesDate}</button>
             </div>
         </div>
-        ` : ''}`;
+        ` : ''}
+        
+        ${isClosed ? `
+        <div class="alert-info" style="text-align: center;">
+            <i class="fas fa-check-circle"></i> Day ${selectedSalesDate} is CLOSED. Select a different date to add new sales.
+        </div>
+        ` : ''}
+        `;
     }
     
     function renderExpenses() {
