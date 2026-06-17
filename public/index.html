@@ -132,6 +132,25 @@
         return Number(num.toFixed(2));
     }
     
+    // ✅ NEW: Convert UTC timestamp to Kenya local time
+    function formatLocalTime(utcTimestamp) {
+        if (!utcTimestamp) return '-';
+        try {
+            const date = new Date(utcTimestamp);
+            return date.toLocaleString('en-KE', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        } catch (e) {
+            return utcTimestamp;
+        }
+    }
+    
     const API_URL = '';
     let token = localStorage.getItem('token');
     let currentUser = null;
@@ -1029,7 +1048,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.3.0 (UI Improved)\n\n✅ Removed "Start New Day" button - date picker auto-starts\n✅ Add Sale button - Blue\n✅ Close Day button - Light grey\n✅ Activity Logs - Time filter arrows\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.3.0 (UI Improved)\n\n✅ Removed "Start New Day" button - date picker auto-starts\n✅ Add Sale button - Blue\n✅ Close Day button - Light grey\n✅ Activity Logs - Time filter arrows\n✅ Time displayed in Kenya local time\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // RENDER FUNCTIONS
@@ -1082,6 +1101,7 @@
         </div>`;
     }
     
+    // ✅ UPDATED: renderLogs with Kenya local time and time filter arrows
     function renderLogs() {
         // Filter logs by time
         let filteredLogs = [...activityLogs];
@@ -1127,10 +1147,10 @@
         </div>
         <div class="table-container">
             <table class="data-table">
-                <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
+                <thead><tr><th>Time (Kenya)</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
                 <tbody>
                     ${filteredLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs found for this time period</td>' : 
-                    filteredLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole || 'Admin'}</td><td style="padding:8px"><span class="role-badge">${l.action}</span></td><td style="padding:8px">${l.details}</td></tr>`).join('')}
+                    filteredLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${formatLocalTime(l.timestamp)}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole || 'Admin'}</td><td style="padding:8px"><span class="role-badge">${l.action}</span></td><td style="padding:8px">${l.details}</td></tr>`).join('')}
                 </tbody>
             </table>
         </div>`;
