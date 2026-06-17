@@ -6,7 +6,7 @@ const url = require('url');
 const PORT = process.env.PORT || 8080;
 const DATA_FILE = path.join(__dirname, 'butchery_data.json');
 
-// Default data structure
+// Default data structure with sample inventory
 const DEFAULT_DATA = {
     users: [
         { id: 1, username: "superadmin", password: "admin123", role: "super_admin", fullName: "Super Admin", email: "super@butchery.com", phone: "0712345678", isActive: true, createdAt: "", lastLogin: null, permissions: ["all"] },
@@ -26,7 +26,6 @@ const DEFAULT_DATA = {
     nextId: { inventory: 6, expenses: 1, users: 3, closings: 1 }
 };
 
-// Helper functions
 function loadData() {
     try {
         if (fs.existsSync(DATA_FILE)) {
@@ -59,7 +58,6 @@ function generateId(data, key) {
     return data.nextId[key];
 }
 
-// Parse JSON body
 function parseBody(req) {
     return new Promise((resolve, reject) => {
         let body = '';
@@ -75,7 +73,6 @@ function parseBody(req) {
     });
 }
 
-// Send JSON response
 function sendJSON(res, data, status = 200) {
     res.writeHead(status, {
         'Content-Type': 'application/json',
@@ -86,7 +83,6 @@ function sendJSON(res, data, status = 200) {
     res.end(JSON.stringify(data));
 }
 
-// Serve static files
 function serveStatic(res, filePath, contentType) {
     try {
         const content = fs.readFileSync(filePath);
@@ -98,13 +94,12 @@ function serveStatic(res, filePath, contentType) {
     }
 }
 
-// Create HTTP server
 const server = http.createServer(async (req, res) => {
     const parsedUrl = url.parse(req.url, true);
     const pathname = parsedUrl.pathname;
     const method = req.method;
 
-    // Handle CORS preflight
+    // CORS
     if (method === 'OPTIONS') {
         res.writeHead(200, {
             'Access-Control-Allow-Origin': '*',
@@ -141,7 +136,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) {
         const data = loadData();
         
-        // ========== AUTH ==========
+        // ========== LOGIN ==========
         if (pathname === '/api/login' && method === 'POST') {
             const body = await parseBody(req);
             const user = findUser(data.users, body.username);
@@ -270,7 +265,7 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-        // ========== CURRENT SALES ==========
+        // ========== CURRENT SALES (with Inventory Deduction) ==========
         if (pathname === '/api/current-sales') {
             if (method === 'GET') {
                 sendJSON(res, data.currentDaySales);
@@ -280,7 +275,14 @@ const server = http.createServer(async (req, res) => {
                 const body = await parseBody(req);
                 const saleDate = body.date || new Date().toISOString().split('T')[0];
                 
-                if (data.currentDaySales.date !== saleDate) {
+                // Initialize day if different date
+                if (data.currentDaySales.date !== saleDate || data.currentDaySales.isClosed) {
+                    // Check if there's a closing record for this date
+                    const closing = data.dailyClosings.find(c => c.date === saleDate);
+                    if (closing) {
+                        sendJSON(res, { error: 'This day is already closed' }, 400);
+                        return;
+                    }
                     data.currentDaySales = {
                         date: saleDate,
                         totalKg: 0,
@@ -296,30 +298,49 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
+                // Find product
                 const product = data.inventory.find(p => p.id == body.productId);
                 if (!product) {
                     sendJSON(res, { error: 'Product not found' }, 404);
                     return;
                 }
 
+                // Check stock
                 if (product.stockKg < body.kg) {
-                    sendJSON(res, { error: 'Not enough stock' }, 400);
+                    sendJSON(res, { 
+                        error: `Not enough stock! Only ${product.stockKg.toFixed(2)} kg available for ${product.name}` 
+                    }, 400);
                     return;
                 }
 
+                // ✅ DEDUCT FROM INVENTORY
                 product.stockKg = Math.round((product.stockKg - body.kg) * 100) / 100;
                 
+                // Update sales
                 data.currentDaySales.totalKg = Math.round((data.currentDaySales.totalKg + body.kg) * 100) / 100;
                 data.currentDaySales.cashAmount = Math.round((data.currentDaySales.cashAmount + (body.cash || 0)) * 100) / 100;
                 data.currentDaySales.mpesaAmount = Math.round((data.currentDaySales.mpesaAmount + (body.mpesa || 0)) * 100) / 100;
                 
+                // Track sales by product
                 data.currentDaySales.salesByProduct = data.currentDaySales.salesByProduct || {};
                 const productName = body.productName || product.name;
                 data.currentDaySales.salesByProduct[productName] = 
                     Math.round(((data.currentDaySales.salesByProduct[productName] || 0) + body.kg) * 100) / 100;
 
+                // Log activity
+                data.activityLogs.push({
+                    timestamp: new Date().toISOString(),
+                    user: body.userName || 'System',
+                    action: 'SALE',
+                    details: `${body.kg}kg of ${productName} sold for KES ${((body.cash || 0) + (body.mpesa || 0)).toFixed(2)}`
+                });
+
                 saveData(data);
-                sendJSON(res, data.currentDaySales);
+                sendJSON(res, { 
+                    success: true, 
+                    sales: data.currentDaySales,
+                    inventory: product
+                });
                 return;
             }
         }
@@ -327,12 +348,19 @@ const server = http.createServer(async (req, res) => {
         // ========== SALES BY DATE ==========
         if (pathname === '/api/sales-by-date' && method === 'GET') {
             const date = parsedUrl.query.date || new Date().toISOString().split('T')[0];
-            if (data.currentDaySales.date === date) {
+            if (data.currentDaySales.date === date && !data.currentDaySales.isClosed) {
                 sendJSON(res, data.currentDaySales);
             } else {
                 const closing = data.dailyClosings.find(c => c.date === date);
                 if (closing) {
-                    sendJSON(res, { date, isClosed: true, totalKg: closing.totalKg, cashAmount: closing.cashAmount, mpesaAmount: closing.mpesaAmount, salesByProduct: {} });
+                    sendJSON(res, { 
+                        date, 
+                        isClosed: true, 
+                        totalKg: closing.totalKg, 
+                        cashAmount: closing.cashAmount, 
+                        mpesaAmount: closing.mpesaAmount, 
+                        salesByProduct: closing.salesByProduct || {} 
+                    });
                 } else {
                     sendJSON(res, { date, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} });
                 }
@@ -344,11 +372,14 @@ const server = http.createServer(async (req, res) => {
         if (pathname === '/api/new-day' && method === 'POST') {
             const body = await parseBody(req);
             const date = body.date || new Date().toISOString().split('T')[0];
+            
+            // Check if day is already closed
             const closing = data.dailyClosings.find(c => c.date === date);
             if (closing) {
-                sendJSON(res, { error: 'Day is already closed' }, 400);
+                sendJSON(res, { error: 'This day is already closed' }, 400);
                 return;
             }
+            
             data.currentDaySales = {
                 date: date,
                 totalKg: 0,
@@ -357,8 +388,16 @@ const server = http.createServer(async (req, res) => {
                 isClosed: false,
                 salesByProduct: {}
             };
+            
+            data.activityLogs.push({
+                timestamp: new Date().toISOString(),
+                user: body.userName || 'System',
+                action: 'NEW_DAY',
+                details: `Started new day: ${date}`
+            });
+            
             saveData(data);
-            sendJSON(res, data.currentDaySales);
+            sendJSON(res, { success: true, sales: data.currentDaySales });
             return;
         }
 
@@ -372,13 +411,15 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
+            const totalRevenue = (data.currentDaySales.cashAmount || 0) + (data.currentDaySales.mpesaAmount || 0);
+            
             const closingRecord = {
                 id: generateId(data, 'closings'),
                 date: date,
                 totalKg: data.currentDaySales.totalKg || 0,
                 cashAmount: data.currentDaySales.cashAmount || 0,
                 mpesaAmount: data.currentDaySales.mpesaAmount || 0,
-                totalRevenue: (data.currentDaySales.cashAmount || 0) + (data.currentDaySales.mpesaAmount || 0),
+                totalRevenue: totalRevenue,
                 closedBy: body.closedBy || 'System',
                 closedAt: new Date().toISOString(),
                 salesByProduct: data.currentDaySales.salesByProduct || {}
@@ -386,28 +427,37 @@ const server = http.createServer(async (req, res) => {
 
             data.dailyClosings.push(closingRecord);
             data.currentDaySales.isClosed = true;
+            
+            data.activityLogs.push({
+                timestamp: new Date().toISOString(),
+                user: body.closedBy || 'System',
+                action: 'CLOSE_DAY',
+                details: `Closed day ${date} with ${data.currentDaySales.totalKg}kg sold, Revenue: KES ${totalRevenue.toFixed(2)}`
+            });
+            
             saveData(data);
-            sendJSON(res, closingRecord);
+            sendJSON(res, { success: true, record: closingRecord });
             return;
         }
 
-        // ========== DELETE SALE ==========
+        // ========== DELETE SALE ENTRY (Restores Inventory) ==========
         if (pathname === '/api/delete-sale' && method === 'POST') {
             const body = await parseBody(req);
             const productName = body.productName;
             const kgToRemove = body.kg || 0;
-            const saleDate = body.date || data.currentDaySales.date;
 
             if (data.currentDaySales.isClosed) {
                 sendJSON(res, { error: 'Cannot delete from closed day' }, 400);
                 return;
             }
 
+            // ✅ RESTORE INVENTORY
             const product = data.inventory.find(p => p.name === productName);
             if (product) {
                 product.stockKg = Math.round((product.stockKg + kgToRemove) * 100) / 100;
             }
 
+            // Remove from sales
             if (data.currentDaySales.salesByProduct && data.currentDaySales.salesByProduct[productName]) {
                 const currentKg = data.currentDaySales.salesByProduct[productName];
                 const newKg = Math.round((currentKg - kgToRemove) * 100) / 100;
@@ -417,16 +467,6 @@ const server = http.createServer(async (req, res) => {
                     data.currentDaySales.salesByProduct[productName] = newKg;
                 }
                 data.currentDaySales.totalKg = Math.round((data.currentDaySales.totalKg - kgToRemove) * 100) / 100;
-                
-                if (Object.keys(data.currentDaySales.salesByProduct).length === 0) {
-                    data.currentDaySales.totalKg = 0;
-                    data.currentDaySales.cashAmount = 0;
-                    data.currentDaySales.mpesaAmount = 0;
-                } else {
-                    // Recalculate totals - simplified approach
-                    data.currentDaySales.cashAmount = Math.round((data.currentDaySales.cashAmount * (1 - kgToRemove / (currentKg || 1))) * 100) / 100;
-                    data.currentDaySales.mpesaAmount = Math.round((data.currentDaySales.mpesaAmount * (1 - kgToRemove / (currentKg || 1))) * 100) / 100;
-                }
             }
 
             saveData(data);
@@ -450,6 +490,12 @@ const server = http.createServer(async (req, res) => {
                     description: body.description || ''
                 };
                 data.expenses.push(newExpense);
+                data.activityLogs.push({
+                    timestamp: new Date().toISOString(),
+                    user: body.userName || 'System',
+                    action: 'EXPENSE',
+                    details: `Added ${body.category} expense: KES ${body.amount}`
+                });
                 saveData(data);
                 sendJSON(res, newExpense);
                 return;
@@ -494,18 +540,18 @@ const server = http.createServer(async (req, res) => {
 
         // ========== RESET ALL ==========
         if (pathname === '/api/reset-all' && method === 'POST') {
-            data.inventory = [];
+            data.inventory = DEFAULT_DATA.inventory.map(item => ({ ...item }));
             data.dailyClosings = [];
             data.currentDaySales = { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} };
             data.expenses = [];
             data.activityLogs = [];
-            data.nextId = { inventory: 1, expenses: 1, users: 3, closings: 1 };
+            data.nextId = { inventory: 6, expenses: 1, users: 3, closings: 1 };
             saveData(data);
             sendJSON(res, { success: true });
             return;
         }
 
-        // ========== ME (current user) ==========
+        // ========== ME ==========
         if (pathname === '/api/me' && method === 'GET') {
             const auth = req.headers.authorization;
             if (auth && auth.startsWith('Bearer ')) {
@@ -543,11 +589,17 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('='.repeat(50));
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('='.repeat(50));
+    console.log('📖 DAILY WORKFLOW:');
+    console.log('1. Login as Admin');
+    console.log('2. Record each sale → Inventory auto-deducted');
+    console.log('3. At end of day, click "Close Day"');
+    console.log('4. Next day, click "Start New Day"');
+    console.log('5. Add expenses when they occur');
+    console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');
     console.log('='.repeat(50));
 });
 
-// Handle graceful shutdown
 process.on('SIGINT', () => {
     console.log('\nServer stopped.');
     process.exit(0);
