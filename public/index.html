@@ -110,10 +110,22 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.1.0 📅 Sales Date Picker</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.2.0 📊 Fixed Decimal Display</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH SALES DATE PICKER ==========
+    // ========== BISMILAH BUTCHERY PRO - WITH DECIMAL FIX ==========
+    
+    // ✅ FIXED: Round to 3 decimal places to avoid floating point issues
+    function roundToTwo(num) {
+        if (isNaN(num) || num === null || num === undefined) return 0;
+        return Number(num.toFixed(3));
+    }
+    
+    // ✅ FIXED: Round to 2 decimal places for currency
+    function roundCurrency(num) {
+        if (isNaN(num) || num === null || num === undefined) return 0;
+        return Number(num.toFixed(2));
+    }
     
     const API_URL = '';
     let token = localStorage.getItem('token');
@@ -258,7 +270,7 @@
             const calculatedKg = totalAmount / product.priceKg;
             const kgInput = document.getElementById('dailyKg');
             if (kgInput) {
-                kgInput.value = calculatedKg.toFixed(2);
+                kgInput.value = roundToTwo(calculatedKg).toFixed(2);
             }
         }
     };
@@ -301,10 +313,10 @@
         
         const data = filtered.map(r => ({
             'Date': r.date,
-            'Total KG': r.totalKg,
-            'Cash Amount': r.cashAmount,
-            'M-Pesa Amount': r.mpesaAmount,
-            'Total Revenue': r.totalRevenue,
+            'Total KG': roundToTwo(r.totalKg),
+            'Cash Amount': roundCurrency(r.cashAmount),
+            'M-Pesa Amount': roundCurrency(r.mpesaAmount),
+            'Total Revenue': roundCurrency(r.totalRevenue),
             'Closed By': r.closedBy
         }));
         
@@ -361,15 +373,15 @@
                 <h1>Bismillah Butchery Pro - Sales Report</h1>
                 <p>Period: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}</p>
                 <div class="summary">
-                    <div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${totalRevenue.toLocaleString()}</div></div>
-                    <div class="summary-box"><h3>Total KG Sold</h3><div class="value">${totalKg} kg</div></div>
-                    <div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${totalExpenses.toLocaleString()}</div></div>
-                    <div class="summary-box"><h3>Total Profit</h3><div class="value ${totalProfit >= 0 ? 'profit' : 'loss'}">KES ${totalProfit.toLocaleString()}</div></div>
+                    <div class="summary-box"><h3>Total Revenue</h3><div class="value">KES ${roundCurrency(totalRevenue).toLocaleString()}</div></div>
+                    <div class="summary-box"><h3>Total KG Sold</h3><div class="value">${roundToTwo(totalKg)} kg</div></div>
+                    <div class="summary-box"><h3>Total Expenses</h3><div class="value">KES ${roundCurrency(totalExpenses).toLocaleString()}</div></div>
+                    <div class="summary-box"><h3>Total Profit</h3><div class="value ${totalProfit >= 0 ? 'profit' : 'loss'}">KES ${roundCurrency(totalProfit).toLocaleString()}</div></div>
                 </div>
                 <table>
                     <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th></tr></thead>
                     <tbody>
-                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}<tr><td style="padding:8px">KES ${r.totalRevenue.toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}
+                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${roundCurrency(r.cashAmount).toLocaleString()}</td><td style="padding:8px">KES ${roundCurrency(r.mpesaAmount).toLocaleString()}</td><td style="padding:8px">KES ${roundCurrency(r.totalRevenue).toLocaleString()}</td><td style="padding:8px">${r.closedBy}</td></tr>`).join('')}
                     </tbody>
                 </table>
                 <p style="margin-top: 20px; text-align: center;">Generated on ${new Date().toLocaleString()}</p>
@@ -442,16 +454,16 @@
         if (!product) return alert('Product not found');
         
         if (product.stockKg < kg) {
-            alert(`Not enough stock! Only ${product.stockKg} kg available for ${product.name}`);
+            alert(`Not enough stock! Only ${roundToTwo(product.stockKg)} kg available for ${product.name}`);
             return;
         }
         
         const result = await apiCall('/api/current-sales', 'POST', { 
             productId: selectedProductId,
             productName: product.name,
-            kg, 
-            cash: cash || 0, 
-            mpesa: mpesa || 0,
+            kg: roundToTwo(kg), 
+            cash: roundCurrency(cash || 0), 
+            mpesa: roundCurrency(mpesa || 0),
             date: saleDate
         });
         
@@ -459,7 +471,7 @@
             await loadSalesForDate(saleDate);
             await loadAllData();
             renderApp();
-            alert(`✅ Sold ${kg}kg of ${product.name} on ${saleDate}!`);
+            alert(`✅ Sold ${roundToTwo(kg)}kg of ${product.name} on ${saleDate}!`);
             if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
             if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
             if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
@@ -479,11 +491,11 @@
             for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
                 const productInfo = inventory.find(p => p.name === product);
                 const revenue = kg * (productInfo?.priceKg || 0);
-                salesSummary += `\n- ${product}: ${kg} kg = KES ${revenue.toLocaleString()}`;
+                salesSummary += `\n- ${product}: ${roundToTwo(kg)} kg = KES ${roundCurrency(revenue).toLocaleString()}`;
             }
         }
         
-        if (confirm(`Close ${today}?\nTotal KG: ${currentDaySales.totalKg} kg\nCash: KES ${currentDaySales.cashAmount.toLocaleString()}\nM-Pesa: KES ${currentDaySales.mpesaAmount.toLocaleString()}\nTotal Revenue: KES ${total.toLocaleString()}${salesSummary}`)) {
+        if (confirm(`Close ${today}?\nTotal KG: ${roundToTwo(currentDaySales.totalKg)} kg\nCash: KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}\nM-Pesa: KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}\nTotal Revenue: KES ${roundCurrency(total).toLocaleString()}${salesSummary}`)) {
             const result = await apiCall('/api/close-day', 'POST', { date: today });
             if (result) {
                 await loadSalesForDate(today);
@@ -518,7 +530,7 @@
         
         const result = await apiCall('/api/expenses', 'POST', { 
             category, 
-            amount, 
+            amount: roundCurrency(amount), 
             description: description || '',
             date: expenseDate
         });
@@ -550,7 +562,7 @@
         if (input) input.type = loginPasswordVisible ? 'text' : 'password';
     };
     
-    // Reset function
+    // Reset function - COMPLETE
     window.resetAllData = () => {
         if (!isSuperAdmin()) {
             alert('Only Super Admin can reset all data!');
@@ -712,91 +724,39 @@
         }
     };
     
-    // Product edit functions
-    window.openEditProductModal = async (productId) => {
-        const product = inventory.find(p => p.id === productId);
-        if (!product) return;
-        
-        const modalHtml = `
-            <div class="modal" id="editProductModal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3>
-                        <button class="close-modal" onclick="closeEditProductModal()">&times;</button>
-                    </div>
-                    <div class="form-group">
-                        <label>Product Name</label>
-                        <input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}">
-                    </div>
-                    <div class="form-group">
-                        <label>Animal Type</label>
-                        <select id="editAnimal">
-                            <option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option>
-                            <option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option>
-                            <option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option>
-                            <option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Stock Quantity (kg)</label>
-                        <input type="number" id="editStock" step="0.1" value="${product.stockKg}">
-                    </div>
-                    <div class="form-group">
-                        <label>Selling Price (KES per kg)</label>
-                        <input type="number" id="editPrice" step="10" value="${product.priceKg}">
-                    </div>
-                    <div class="form-group">
-                        <label>Cost Price (KES per kg)</label>
-                        <input type="number" id="editCost" step="10" value="${product.costKg}">
-                    </div>
-                    <div class="form-group">
-                        <label>Low Stock Alert (kg)</label>
-                        <input type="number" id="editAlert" step="1" value="${product.lowStockAlert}">
-                    </div>
-                    <div style="display:flex; gap:12px; margin-top:20px;">
-                        <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
-                        <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        const existing = document.getElementById('editProductModal');
-        if (existing) existing.remove();
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-    };
-    
-    window.closeEditProductModal = () => {
-        const modal = document.getElementById('editProductModal');
-        if (modal) modal.remove();
-    };
-    
-    window.saveProductEdit = async (productId) => {
-        const name = document.getElementById('editName')?.value;
-        const animal = document.getElementById('editAnimal')?.value;
-        const stockKg = parseFloat(document.getElementById('editStock')?.value);
-        const priceKg = parseFloat(document.getElementById('editPrice')?.value);
-        const costKg = parseFloat(document.getElementById('editCost')?.value);
-        const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
-        
-        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
-            alert('Please fill all required fields');
-            return;
-        }
-        
-        const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
-            name, animal, stockKg, priceKg, costKg, lowStockAlert
-        });
-        
-        if (result) {
-            closeEditProductModal();
-            await loadAllData();
-            renderApp();
-            alert('✅ Product updated successfully!');
-        } else {
-            alert('Update failed. Please try again.');
+    window.deleteUser = async (userId) => {
+        if (!canManageUsers()) return alert('Only Super Admin can delete users');
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        if (user.username === 'superadmin') { alert('Cannot delete Super Admin!'); return; }
+        if (user.id === currentUser?.id) { alert('Cannot delete your own account!'); return; }
+        if (confirm(`Delete ${user.fullName}?`)) {
+            const result = await apiCall(`/api/users/${userId}`, 'DELETE');
+            if (result) {
+                await loadAllData();
+                renderApp();
+                alert('✅ User deleted');
+            }
         }
     };
     
+    window.openEditUserModal = async (userId) => {
+        if (!canManageUsers()) return alert('Only Super Admin can manage users');
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        
+        const newFullName = prompt('Enter new full name:', user.fullName);
+        if (newFullName && newFullName !== user.fullName) {
+            const result = await apiCall(`/api/users/${userId}`, 'PUT', { fullName: newFullName });
+            if (result) {
+                await loadAllData();
+                renderApp();
+                alert('✅ User updated');
+            }
+        }
+    };
+    
+    // Product functions
     window.openAddProductModal = () => {
         if (!isSuperAdmin()) return alert('Only Super Admin can add products');
         
@@ -869,7 +829,7 @@
         if (isNaN(costKg)) costKg = priceKg * 0.7;
         
         const result = await apiCall('/api/inventory', 'POST', {
-            name, animal, stockKg, priceKg, costKg, lowStockAlert
+            name, animal, stockKg: roundToTwo(stockKg), priceKg: roundCurrency(priceKg), costKg: roundCurrency(costKg), lowStockAlert
         });
         
         if (result) {
@@ -879,6 +839,90 @@
             alert(`✅ Product "${name}" added successfully!`);
         } else {
             alert('Failed to add product. Please try again.');
+        }
+    };
+    
+    window.openEditProductModal = async (productId) => {
+        const product = inventory.find(p => p.id === productId);
+        if (!product) return;
+        
+        const modalHtml = `
+            <div class="modal" id="editProductModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3>
+                        <button class="close-modal" onclick="closeEditProductModal()">&times;</button>
+                    </div>
+                    <div class="form-group">
+                        <label>Product Name</label>
+                        <input type="text" id="editName" value="${product.name.replace(/['"]/g, '&quot;')}">
+                    </div>
+                    <div class="form-group">
+                        <label>Animal Type</label>
+                        <select id="editAnimal">
+                            <option value="Cow" ${product.animal === 'Cow' ? 'selected' : ''}>Cow</option>
+                            <option value="Goat" ${product.animal === 'Goat' ? 'selected' : ''}>Goat</option>
+                            <option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option>
+                            <option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Stock Quantity (kg)</label>
+                        <input type="number" id="editStock" step="0.1" value="${product.stockKg}">
+                    </div>
+                    <div class="form-group">
+                        <label>Selling Price (KES per kg)</label>
+                        <input type="number" id="editPrice" step="10" value="${product.priceKg}">
+                    </div>
+                    <div class="form-group">
+                        <label>Cost Price (KES per kg)</label>
+                        <input type="number" id="editCost" step="10" value="${product.costKg}">
+                    </div>
+                    <div class="form-group">
+                        <label>Low Stock Alert (kg)</label>
+                        <input type="number" id="editAlert" step="1" value="${product.lowStockAlert}">
+                    </div>
+                    <div style="display:flex; gap:12px; margin-top:20px;">
+                        <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
+                        <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        const existing = document.getElementById('editProductModal');
+        if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+    
+    window.closeEditProductModal = () => {
+        const modal = document.getElementById('editProductModal');
+        if (modal) modal.remove();
+    };
+    
+    window.saveProductEdit = async (productId) => {
+        const name = document.getElementById('editName')?.value;
+        const animal = document.getElementById('editAnimal')?.value;
+        const stockKg = parseFloat(document.getElementById('editStock')?.value);
+        const priceKg = parseFloat(document.getElementById('editPrice')?.value);
+        const costKg = parseFloat(document.getElementById('editCost')?.value);
+        const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
+        
+        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
+            alert('Please fill all required fields');
+            return;
+        }
+        
+        const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
+            name, animal, stockKg: roundToTwo(stockKg), priceKg: roundCurrency(priceKg), costKg: roundCurrency(costKg), lowStockAlert
+        });
+        
+        if (result) {
+            closeEditProductModal();
+            await loadAllData();
+            renderApp();
+            alert('✅ Product updated successfully!');
+        } else {
+            alert('Update failed. Please try again.');
         }
     };
     
@@ -916,38 +960,6 @@
                 await loadAllData();
                 renderApp();
                 alert('✅ Record deleted');
-            }
-        }
-    };
-    
-    window.openEditUserModal = async (userId) => {
-        if (!canManageUsers()) return alert('Only Super Admin can manage users');
-        const user = users.find(u => u.id === userId);
-        if (!user) return;
-        
-        const newFullName = prompt('Enter new full name:', user.fullName);
-        if (newFullName && newFullName !== user.fullName) {
-            const result = await apiCall(`/api/users/${userId}`, 'PUT', { fullName: newFullName });
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ User updated');
-            }
-        }
-    };
-    
-    window.deleteUser = async (userId) => {
-        if (!canManageUsers()) return alert('Only Super Admin can delete users');
-        const user = users.find(u => u.id === userId);
-        if (!user) return;
-        if (user.username === 'superadmin') { alert('Cannot delete Super Admin!'); return; }
-        if (user.id === currentUser?.id) { alert('Cannot delete your own account!'); return; }
-        if (confirm(`Delete ${user.fullName}?`)) {
-            const result = await apiCall(`/api/users/${userId}`, 'DELETE');
-            if (result) {
-                await loadAllData();
-                renderApp();
-                alert('✅ User deleted');
             }
         }
     };
@@ -1015,12 +1027,13 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.1.0 (Sales Date Picker)\n\nNew Feature: Select any date to record sales!\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.2.0 (Decimal Fixed)\n\n✅ Fixed floating point issues\n✅ Numbers now show cleanly (e.g., 6.588 instead of 6.587999999999999)\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
+    // RENDER FUNCTIONS
     function renderDashboard() {
         const totalInventoryValue = inventory.reduce((sum, i) => sum + (i.stockKg * i.costKg), 0);
-        const todayTotal = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        const todayTotal = (currentDaySales.cashAmount || 0) + (currentDaySales.mpesaAmount || 0);
         const lowStock = inventory.filter(i => i.stockKg <= i.lowStockAlert).length;
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -1029,141 +1042,61 @@
             .reduce((sum, r) => sum + r.totalRevenue, 0);
         
         return `<div class="stats-grid">
-            <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${todayTotal.toLocaleString()}</div><div class="stat-change">${currentDaySales.totalKg} kg sold today</div></div>
-            <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${totalInventoryValue.toLocaleString()}</div><div class="stat-change">Based on cost price</div></div>
+            <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${roundCurrency(todayTotal).toLocaleString()}</div><div class="stat-change">${roundToTwo(currentDaySales.totalKg)} kg sold today</div></div>
+            <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${roundCurrency(totalInventoryValue).toLocaleString()}</div><div class="stat-change">Based on cost price</div></div>
             <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value">${lowStock}</div><div class="stat-change">Items below threshold</div></div>
-            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${weeklyRevenue.toLocaleString()}</div><div class="stat-change">From ${dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).length} closed days</div></div>
+            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${roundCurrency(weeklyRevenue).toLocaleString()}</div><div class="stat-change">From ${dailyClosings.filter(r => new Date(r.date) >= sevenDaysAgo).length} closed days</div></div>
         </div>
-        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${item.stockKg} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
+        <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
     }
     
-    function renderReports() {
-        let filtered = getFilteredClosings();
+    function renderInventory() {
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${roundToTwo(p.stockKg)}</td><td style="padding:8px">KES ${roundCurrency(p.priceKg)}</td><td style="padding:8px">KES ${roundCurrency(p.costKg)}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody></div>`;
+    }
+    
+    function renderExpenses() {
+        const today = new Date().toISOString().split('T')[0];
         
-        const totalRevenue = filtered.reduce((sum, r) => sum + r.totalRevenue, 0);
-        const totalKg = filtered.reduce((sum, r) => sum + r.totalKg, 0);
-        
-        const filteredExpenses = expenses.filter(e => {
-            const expenseDate = new Date(e.date);
-            const start = reportStartDate ? new Date(reportStartDate) : null;
-            const end = reportEndDate ? new Date(reportEndDate) : null;
-            if (start && expenseDate < start) return false;
-            if (end && expenseDate > end) return false;
-            return true;
-        });
-        const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
-        const totalProfit = totalRevenue - totalExpenses;
-        const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
-        
-        const chartLabels = filtered.map(r => r.date).reverse();
-        const chartRevenue = filtered.map(r => r.totalRevenue).reverse();
-        
-        if (revenueChart) revenueChart.destroy();
-        if (profitChart) profitChart.destroy();
-        
-        setTimeout(() => {
-            const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
-            const profitCtx = document.getElementById('profitChart')?.getContext('2d');
-            
-            if (revenueCtx) {
-                revenueChart = new Chart(revenueCtx, {
-                    type: 'line',
-                    data: {
-                        labels: chartLabels,
-                        datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 }]
-                    },
-                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
-                });
-            }
-            
-            if (profitCtx && filtered.length > 0) {
-                const dailyProfits = filtered.map(r => {
-                    const dayExpenses = filteredExpenses.filter(e => e.date === r.date).reduce((sum, e) => sum + e.amount, 0);
-                    return r.totalRevenue - dayExpenses;
-                }).reverse();
-                
-                profitChart = new Chart(profitCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: chartLabels,
-                        datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }]
-                    },
-                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
-                });
-            }
-        }, 100);
-        
-        const profitCardClass = totalProfit >= 0 ? 'profit-card' : 'loss-card';
-        
-        return `<div class="report-selector">
-            <div class="date-range">
-                <label>📅 From:</label>
-                <input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()">
-                <label>To:</label>
-                <input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()">
-                <button class="btn-edit" onclick="resetDateRange()">Reset</button>
-            </div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
-                <button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button>
-            </div>
+        return `<div class="card">
+            <div class="card-header"><h2>💰 Add Expense</h2></div>
+            <div class="form-group"><label>Expense Category</label><input id="expCategory" placeholder="e.g., Transport, Utilities, Rent"></div>
+            <div class="form-group"><label>Amount (KES)</label><input id="expAmount" type="number" placeholder="Enter amount"></div>
+            <div class="form-group"><label>Date</label><input id="expenseDate" type="date" value="${today}"></div>
+            <div class="form-group"><label>Description (Optional)</label><textarea id="expDesc" placeholder="Additional details"></textarea></div>
+            <button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button>
         </div>
-        
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${totalRevenue.toLocaleString()}</div></div>
-            <div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${totalKg} kg</div></div>
-            <div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${totalExpenses.toLocaleString()}</div></div>
-            <div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${totalProfit.toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div>
-        </div>
-        
         <div class="card">
-            <div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div>
-            <div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div>
-            <div class="chart-container"><canvas id="profitChart" height="200"></canvas></div>
-        </div>
-        
-        ${filtered.length === 0 ? `
-        <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>
-        ` : `
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div>
+            <div class="card-header"><h2>📋 Expense History</h2></div>
             <div class="table-container">
                 <table class="data-table">
-                    <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead>
+                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead>
                     <tbody>
-                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${r.totalKg}</td><td style="padding:8px">KES ${r.cashAmount.toLocaleString()}</td><td style="padding:8px">KES ${r.mpesaAmount.toLocaleString()}</td><td style="padding:8px"><strong>KES ${r.totalRevenue.toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}
+                        ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `
+                            <tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${roundCurrency(e.amount).toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td><td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td></tr>
+                        `).join('')}
                     </tbody>
                 </table>
             </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead>
-                    <tbody>
-                        ${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${e.amount.toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        `}`;
+        </div>`;
+    }
+    
+    function renderLogs() {
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody></div>`;
+    }
+    
+    function renderUsers() {
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody></div>`;
     }
     
     function renderSales() {
-        const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${p.stockKg} kg available) - KES ${p.priceKg}/kg</option>`).join('');
+        const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${roundCurrency(p.priceKg)}/kg</option>`).join('');
         const isClosed = currentDaySales.isClosed;
         const statusText = isClosed ? '🔒 Closed' : '🟢 Open';
         
         return `<div class="sales-panel">
-            <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${currentDaySales.totalKg} kg</div></div>
-            <div class="sales-card"><h3>💰 Cash</h3><div class="amount">KES ${currentDaySales.cashAmount.toLocaleString()}</div></div>
-            <div class="sales-card"><h3>📱 M-Pesa</h3><div class="amount">KES ${currentDaySales.mpesaAmount.toLocaleString()}</div></div>
+            <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${roundToTwo(currentDaySales.totalKg)} kg</div></div>
+            <div class="sales-card"><h3>💰 Cash</h3><div class="amount">KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}</div></div>
+            <div class="sales-card"><h3>📱 M-Pesa</h3><div class="amount">KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}</div></div>
         </div>
         
         <div class="card">
@@ -1214,8 +1147,8 @@
                             const revenue = kg * pricePerKg;
                             return `<tr>
                                 <td style="padding:8px">${product}</td>
-                                <td style="padding:8px">${parseFloat(kg).toFixed(2)} kg</td>
-                                <td style="padding:8px">KES ${revenue.toLocaleString()} (${pricePerKg}/kg)</td>
+                                <td style="padding:8px">${roundToTwo(kg)} kg</td>
+                                <td style="padding:8px">KES ${roundCurrency(revenue).toLocaleString()} (${roundCurrency(pricePerKg)}/kg)</td>
                                 <td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td>
                             </tr>`;
                         }).join('')}
@@ -1229,48 +1162,122 @@
         <div class="alert-info"><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Change the date above to record sales for any day, past or present!</div>`;
     }
     
-    function renderExpenses() {
-        const today = new Date().toISOString().split('T')[0];
+    function renderReports() {
+        let filtered = getFilteredClosings();
         
-        return `<div class="card">
-            <div class="card-header"><h2>💰 Add Expense</h2></div>
-            <div class="form-group">
-                <label>Expense Category</label>
-                <input id="expCategory" placeholder="e.g., Transport, Utilities, Rent">
+        const totalRevenue = filtered.reduce((sum, r) => sum + (r.totalRevenue || 0), 0);
+        const totalKg = filtered.reduce((sum, r) => sum + (r.totalKg || 0), 0);
+        
+        const filteredExpenses = expenses.filter(e => {
+            const expenseDate = new Date(e.date);
+            const start = reportStartDate ? new Date(reportStartDate) : null;
+            const end = reportEndDate ? new Date(reportEndDate) : null;
+            if (start && expenseDate < start) return false;
+            if (end && expenseDate > end) return false;
+            return true;
+        });
+        const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+        const totalProfit = totalRevenue - totalExpenses;
+        const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
+        
+        const chartLabels = filtered.map(r => r.date).reverse();
+        const chartRevenue = filtered.map(r => r.totalRevenue).reverse();
+        
+        if (revenueChart) revenueChart.destroy();
+        if (profitChart) profitChart.destroy();
+        
+        setTimeout(() => {
+            const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
+            const profitCtx = document.getElementById('profitChart')?.getContext('2d');
+            
+            if (revenueCtx && chartLabels.length > 0) {
+                revenueChart = new Chart(revenueCtx, {
+                    type: 'line',
+                    data: {
+                        labels: chartLabels,
+                        datasets: [{ label: 'Revenue (KES)', data: chartRevenue, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 }]
+                    },
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                });
+            }
+            
+            if (profitCtx && filtered.length > 0) {
+                const dailyProfits = filtered.map(r => {
+                    const dayExpenses = filteredExpenses.filter(e => e.date === r.date).reduce((sum, e) => sum + e.amount, 0);
+                    return r.totalRevenue - dayExpenses;
+                }).reverse();
+                
+                profitChart = new Chart(profitCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: chartLabels,
+                        datasets: [{ label: 'Daily Profit (KES)', data: dailyProfits, backgroundColor: dailyProfits.map(p => p >= 0 ? '#10b981' : '#ef4444'), borderRadius: 8 }]
+                    },
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                });
+            }
+        }, 100);
+        
+        const profitCardClass = totalProfit >= 0 ? 'profit-card' : 'loss-card';
+        
+        return `<div class="report-selector">
+            <div class="date-range">
+                <label>📅 From:</label>
+                <input type="date" id="reportStartDate" value="${reportStartDate}" onchange="updateDateRange()">
+                <label>To:</label>
+                <input type="date" id="reportEndDate" value="${reportEndDate}" onchange="updateDateRange()">
+                <button class="btn-edit" onclick="resetDateRange()">Reset</button>
             </div>
-            <div class="form-group">
-                <label>Amount (KES)</label>
-                <input id="expAmount" type="number" placeholder="Enter amount">
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
+                <button class="btn-export" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button>
             </div>
-            <div class="form-group">
-                <label>Date</label>
-                <input id="expenseDate" type="date" value="${today}">
-            </div>
-            <div class="form-group">
-                <label>Description (Optional)</label>
-                <textarea id="expDesc" placeholder="Additional details"></textarea>
-            </div>
-            <button class="btn btn-success" onclick="addExpenseWithDate()"><i class="fas fa-plus"></i> Add Expense</button>
         </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-title">Total Revenue</div><div class="stat-value">KES ${roundCurrency(totalRevenue).toLocaleString()}</div></div>
+            <div class="stat-card"><div class="stat-title">Total KG Sold</div><div class="stat-value">${roundToTwo(totalKg)} kg</div></div>
+            <div class="stat-card"><div class="stat-title">Total Expenses</div><div class="stat-value">KES ${roundCurrency(totalExpenses).toLocaleString()}</div></div>
+            <div class="stat-card ${profitCardClass}"><div class="stat-title">Net Profit</div><div class="stat-value">KES ${roundCurrency(totalProfit).toLocaleString()}</div><div class="stat-change">Margin: ${profitMargin}%</div></div>
+        </div>
+        
         <div class="card">
-            <div class="card-header"><h2>📋 Expense History</h2></div>
+            <div class="card-header"><h2><i class="fas fa-chart-line"></i> Revenue Trend</h2></div>
+            <div class="chart-container"><canvas id="revenueChart" height="200"></canvas></div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-chart-bar"></i> Daily Profit/Loss</h2></div>
+            <div class="chart-container"><canvas id="profitChart" height="200"></canvas></div>
+        </div>
+        
+        ${filtered.length === 0 ? `
+        <div class="empty-state"><i class="fas fa-chart-line"></i><h3>No Reports Available</h3><p>No sales data found for the selected period.</p></div>
+        ` : `
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-table"></i> Detailed Sales Records</h2></div>
             <div class="table-container">
                 <table class="data-table">
-                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Date</th><th>KG</th><th>Cash</th><th>M-Pesa</th><th>Total Revenue</th><th>Closed By</th>${canDelete() ? '<th>Action</th>' : ''}</tr></thead>
                     <tbody>
-                        ${expenses.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No expenses recorded yet</td>' : expenses.map(e => `
-                            <tr>
-                                <td style="padding:8px">${e.date}</td>
-                                <td style="padding:8px">${e.category}</td>
-                                <td style="padding:8px">KES ${e.amount.toLocaleString()}</td>
-                                <td style="padding:8px">${e.description || '-'}</td>
-                                <td style="padding:8px">${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteExpense(${e.id})">Delete</button>` : 'View Only'}</td>
-                            </tr>
-                        `).join('')}
+                        ${filtered.map(r => `<tr><td style="padding:8px">${r.date}</td><td style="padding:8px">${roundToTwo(r.totalKg)}</td><td style="padding:8px">KES ${roundCurrency(r.cashAmount).toLocaleString()}</td><td style="padding:8px">KES ${roundCurrency(r.mpesaAmount).toLocaleString()}</td><td style="padding:8px"><strong>KES ${roundCurrency(r.totalRevenue).toLocaleString()}</strong></td><td style="padding:8px">${r.closedBy}</td>${canDelete() ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteClosingRecord(${r.id})">Delete</button></td>` : ''}</tr>`).join('')}
                     </tbody>
                 </table>
             </div>
-        </div>`;
+        </div>
+        
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-receipt"></i> Expenses within Period</h2></div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th></tr></thead>
+                    <tbody>
+                        ${filteredExpenses.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:40px;">No expenses recorded in this period</td>' : filteredExpenses.map(e => `<tr><td style="padding:8px">${e.date}</td><td style="padding:8px">${e.category}</td><td style="padding:8px">KES ${roundCurrency(e.amount).toLocaleString()}</td><td style="padding:8px">${e.description || '-'}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        `}`;
     }
     
     async function renderApp() {
@@ -1306,7 +1313,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? `<div class="table-container"><table class="data-table"><thead><td><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${p.stockKg}</td><td style="padding:8px">KES ${p.priceKg}</td><td style="padding:8px">KES ${p.costKg}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody>}</div>` : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody>}</div>` : `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead><tbody>${activityLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs yet</td>' : activityLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${l.timestamp}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole}</td><td style="padding:8px">${l.action}</td><td style="padding:8px">${l.details}</td></tr>`).join('')}</tbody>}</div>`}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
     }
     
     // Initialize
