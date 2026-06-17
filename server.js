@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 const DATA_FILE = path.join(__dirname, 'butchery_data.json');
 
 // Default data structure
@@ -86,11 +86,11 @@ function sendJSON(res, data, status = 200) {
     res.end(JSON.stringify(data));
 }
 
-// Send HTML file
-function sendFile(res, filePath, contentType = 'text/html') {
+// Serve static files
+function serveStatic(res, filePath, contentType) {
     try {
         const content = fs.readFileSync(filePath);
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(200, { 'Content-Type': contentType || 'text/html' });
         res.end(content);
     } catch (error) {
         res.writeHead(404);
@@ -115,14 +115,25 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Serve static files
+    // Serve index.html
     if (pathname === '/' || pathname === '/index.html') {
-        sendFile(res, path.join(__dirname, 'index.html'));
+        serveStatic(res, path.join(__dirname, 'public', 'index.html'));
         return;
     }
 
-    if (pathname === '/butchery.html') {
-        sendFile(res, path.join(__dirname, 'butchery.html'));
+    // Serve static files from public directory
+    if (pathname.startsWith('/public/')) {
+        const filePath = path.join(__dirname, pathname);
+        const ext = path.extname(filePath);
+        const contentType = {
+            '.css': 'text/css',
+            '.js': 'application/javascript',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml'
+        }[ext] || 'application/octet-stream';
+        serveStatic(res, filePath, contentType);
         return;
     }
 
@@ -269,7 +280,6 @@ const server = http.createServer(async (req, res) => {
                 const body = await parseBody(req);
                 const saleDate = body.date || new Date().toISOString().split('T')[0];
                 
-                // Initialize if date is different
                 if (data.currentDaySales.date !== saleDate) {
                     data.currentDaySales = {
                         date: saleDate,
@@ -286,7 +296,6 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-                // Find product and update stock
                 const product = data.inventory.find(p => p.id == body.productId);
                 if (!product) {
                     sendJSON(res, { error: 'Product not found' }, 404);
@@ -298,10 +307,8 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-                // Update stock
                 product.stockKg = Math.round((product.stockKg - body.kg) * 100) / 100;
                 
-                // Update sales
                 data.currentDaySales.totalKg = Math.round((data.currentDaySales.totalKg + body.kg) * 100) / 100;
                 data.currentDaySales.cashAmount = Math.round((data.currentDaySales.cashAmount + (body.cash || 0)) * 100) / 100;
                 data.currentDaySales.mpesaAmount = Math.round((data.currentDaySales.mpesaAmount + (body.mpesa || 0)) * 100) / 100;
@@ -323,7 +330,6 @@ const server = http.createServer(async (req, res) => {
             if (data.currentDaySales.date === date) {
                 sendJSON(res, data.currentDaySales);
             } else {
-                // Check if there's a closing record for this date
                 const closing = data.dailyClosings.find(c => c.date === date);
                 if (closing) {
                     sendJSON(res, { date, isClosed: true, totalKg: closing.totalKg, cashAmount: closing.cashAmount, mpesaAmount: closing.mpesaAmount, salesByProduct: {} });
@@ -338,7 +344,6 @@ const server = http.createServer(async (req, res) => {
         if (pathname === '/api/new-day' && method === 'POST') {
             const body = await parseBody(req);
             const date = body.date || new Date().toISOString().split('T')[0];
-            // Check if day is already closed
             const closing = data.dailyClosings.find(c => c.date === date);
             if (closing) {
                 sendJSON(res, { error: 'Day is already closed' }, 400);
@@ -398,13 +403,11 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            // Restore stock
             const product = data.inventory.find(p => p.name === productName);
             if (product) {
                 product.stockKg = Math.round((product.stockKg + kgToRemove) * 100) / 100;
             }
 
-            // Remove from sales
             if (data.currentDaySales.salesByProduct && data.currentDaySales.salesByProduct[productName]) {
                 const currentKg = data.currentDaySales.salesByProduct[productName];
                 const newKg = Math.round((currentKg - kgToRemove) * 100) / 100;
@@ -414,15 +417,13 @@ const server = http.createServer(async (req, res) => {
                     data.currentDaySales.salesByProduct[productName] = newKg;
                 }
                 data.currentDaySales.totalKg = Math.round((data.currentDaySales.totalKg - kgToRemove) * 100) / 100;
-                // Cash and Mpesa amounts need to be recalculated - we'll just subtract proportionally
-                // For simplicity, we'll recalculate from salesByProduct
+                
                 if (Object.keys(data.currentDaySales.salesByProduct).length === 0) {
                     data.currentDaySales.totalKg = 0;
                     data.currentDaySales.cashAmount = 0;
                     data.currentDaySales.mpesaAmount = 0;
                 } else {
-                    // Recalculate totals - for simplicity, we just keep the current totals minus the removed portion
-                    // A proper implementation would recalculate from all sales
+                    // Recalculate totals - simplified approach
                     data.currentDaySales.cashAmount = Math.round((data.currentDaySales.cashAmount * (1 - kgToRemove / (currentKg || 1))) * 100) / 100;
                     data.currentDaySales.mpesaAmount = Math.round((data.currentDaySales.mpesaAmount * (1 - kgToRemove / (currentKg || 1))) * 100) / 100;
                 }
@@ -530,56 +531,17 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Serve static files from public directory
-    if (pathname.startsWith('/public/')) {
-        const filePath = path.join(__dirname, pathname);
-        try {
-            const stats = fs.statSync(filePath);
-            if (stats.isFile()) {
-                const ext = path.extname(filePath);
-                const contentType = {
-                    '.css': 'text/css',
-                    '.js': 'application/javascript',
-                    '.png': 'image/png',
-                    '.jpg': 'image/jpeg',
-                    '.gif': 'image/gif',
-                    '.svg': 'image/svg+xml'
-                }[ext] || 'application/octet-stream';
-                sendFile(res, filePath, contentType);
-                return;
-            }
-        } catch (error) {
-            // File not found
-        }
-    }
-
-    // 404
+    // 404 for non-API
     res.writeHead(404);
     res.end('Not Found');
 });
 
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
-    const os = require('os');
-    const networkInterfaces = os.networkInterfaces();
-    let localIP = '127.0.0.1';
-    
-    for (const interfaceName in networkInterfaces) {
-        const interfaces = networkInterfaces[interfaceName];
-        for (const iface of interfaces) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                localIP = iface.address;
-                break;
-            }
-        }
-        if (localIP !== '127.0.0.1') break;
-    }
-
     console.log('='.repeat(50));
     console.log('BISMILLAH BUTCHERY PRO SERVER (Node.js)');
     console.log('='.repeat(50));
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Other devices: http://${localIP}:${PORT}`);
     console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');
     console.log('='.repeat(50));
