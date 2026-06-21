@@ -239,15 +239,25 @@ const server = http.createServer(async (req, res) => {
                     priceKg: body.priceKg || 0,
                     costKg: body.costKg || (body.priceKg * 0.7),
                     lowStockAlert: body.lowStockAlert || 10,
-                    restockDate: body.restockDate || new Date().toISOString().split('T')[0]  // ✅ ADDED
+                    restockDate: body.restockDate || new Date().toISOString().split('T')[0]
                 };
                 data.inventory.push(newItem);
+                
+                // Log the new product
+                data.activityLogs.push({
+                    timestamp: new Date().toISOString(),
+                    user: body.userName || 'System',
+                    action: 'NEW_PRODUCT',
+                    details: `Added new product: ${newItem.name} with ${newItem.stockKg}kg`
+                });
+                
                 saveData(data);
                 sendJSON(res, newItem);
                 return;
             }
         }
 
+        // ========== INVENTORY PUT (RESTOCK - ADDS TO EXISTING) ==========
         if (pathname.startsWith('/api/inventory/')) {
             const id = parseInt(pathname.split('/')[3]);
             const itemIndex = data.inventory.findIndex(i => i.id === id);
@@ -255,20 +265,53 @@ const server = http.createServer(async (req, res) => {
             if (method === 'PUT' && itemIndex !== -1) {
                 const body = await parseBody(req);
                 const item = data.inventory[itemIndex];
+                
+                // Track old stock for logging
+                const oldStock = item.stockKg;
+                const stockToAdd = body.stockKg || 0;
+                
+                // Update basic info
                 if (body.name) item.name = body.name;
                 if (body.animal) item.animal = body.animal;
-                if (body.stockKg !== undefined) item.stockKg = body.stockKg;
+                
+                // ✅ ADD to existing stock instead of replacing
+                if (stockToAdd > 0) {
+                    item.stockKg = Math.round((item.stockKg + stockToAdd) * 100) / 100;
+                    
+                    // Log the restock
+                    data.activityLogs.push({
+                        timestamp: new Date().toISOString(),
+                        user: body.userName || 'System',
+                        action: 'RESTOCK',
+                        details: `Added ${stockToAdd}kg to ${item.name}. Old: ${oldStock}kg, New: ${item.stockKg}kg`
+                    });
+                }
+                
                 if (body.priceKg !== undefined) item.priceKg = body.priceKg;
                 if (body.costKg !== undefined) item.costKg = body.costKg;
                 if (body.lowStockAlert !== undefined) item.lowStockAlert = body.lowStockAlert;
-                if (body.restockDate !== undefined) item.restockDate = body.restockDate;  // ✅ ADDED
+                if (body.restockDate !== undefined) item.restockDate = body.restockDate;
+                
                 saveData(data);
-                sendJSON(res, item);
+                sendJSON(res, { 
+                    success: true, 
+                    item: item,
+                    message: `Added ${stockToAdd}kg to ${item.name}. New total: ${item.stockKg}kg`
+                });
                 return;
             }
 
             if (method === 'DELETE' && itemIndex !== -1) {
+                const deletedItem = data.inventory[itemIndex];
                 data.inventory.splice(itemIndex, 1);
+                
+                data.activityLogs.push({
+                    timestamp: new Date().toISOString(),
+                    user: body?.userName || 'System',
+                    action: 'DELETE_PRODUCT',
+                    details: `Deleted product: ${deletedItem.name}`
+                });
+                
                 saveData(data);
                 sendJSON(res, { success: true });
                 return;
@@ -605,7 +648,8 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('3. At end of day, click "Close Day"');
     console.log('4. Next day, click "Start New Day"');
     console.log('5. Add expenses when they occur');
-    console.log('6. Track restock dates in inventory');
+    console.log('6. Restock → ADDS to existing stock (not replace)');
+    console.log('7. Track restock dates in inventory');
     console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');
     console.log('='.repeat(50));
