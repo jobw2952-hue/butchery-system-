@@ -91,6 +91,8 @@
         .date-range { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
         .date-range input { width: auto; min-width: 150px; }
         .alert-info { background: #e0f2fe; padding: 12px; border-radius: 10px; margin-top: 15px; color: #0369a1; }
+        .alert-open { background: #dbeafe; color: #1e40af; border-left: 4px solid #3b82f6; }
+        .alert-closed { background: #fef3c7; color: #92400e; border-left: 4px solid #f59e0b; }
         .password-cell { display: flex; align-items: center; gap: 8px; font-family: monospace; }
         .eye-icon { cursor: pointer; color: #94a3b8; margin-left: 5px; }
         .eye-icon:hover { color: #3b82f6; }
@@ -114,16 +116,18 @@
         .restock-badge { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
         .restock-badge.old { background: #fef3c7; color: #92400e; }
         .restock-badge.recent { background: #d1fae5; color: #065f46; }
+        .status-open { color: #10b981; font-weight: bold; }
+        .status-closed { color: #ef4444; font-weight: bold; }
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .sales-panel { grid-template-columns: 1fr; } .progress-section { grid-template-columns: 1fr; } .report-selector { flex-direction: column; align-items: stretch; } .date-range { justify-content: center; } }
         @media (max-width: 768px) { .dashboard-layout { flex-direction: column; } .sidebar { width: 100%; position: relative; } }
     </style>
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.6.0 📦 Restock + Edit</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.7.0 📅 Open/Closed Day Management</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH RESTOCK & EDIT ==========
+    // ========== BISMILAH BUTCHERY PRO - OPEN/CLOSED DAY MANAGEMENT ==========
     
     function roundToTwo(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
@@ -288,12 +292,26 @@
         renderApp();
     };
     
+    // ========== CHANGE SALES DATE - CHECK IF CLOSED ==========
     window.changeSalesDate = async () => {
         const datePicker = document.getElementById('salesDatePicker');
         if (datePicker) {
             selectedSalesDate = datePicker.value;
-            await apiCall('/api/new-day', 'POST', { date: selectedSalesDate });
-            await loadSalesForDate(selectedSalesDate);
+            
+            // Check if this date is already closed
+            const closing = dailyClosings.find(c => c.date === selectedSalesDate);
+            
+            if (closing) {
+                // Day is closed - load the closed sales data
+                await loadSalesForDate(selectedSalesDate);
+                renderApp();
+                // Show notification but don't alert every time (user will see the status)
+            } else {
+                // Day is open - start or continue the day
+                await apiCall('/api/new-day', 'POST', { date: selectedSalesDate });
+                await loadSalesForDate(selectedSalesDate);
+                renderApp();
+            }
         }
     };
     
@@ -482,6 +500,13 @@
         const mpesa = parseFloat(document.getElementById('dailyMpesa')?.value);
         const saleDate = document.getElementById('salesDatePicker')?.value || new Date().toISOString().split('T')[0];
         
+        // Check if day is closed
+        const closing = dailyClosings.find(c => c.date === saleDate);
+        if (closing) {
+            alert(`❌ ${saleDate} is already CLOSED! You cannot add more sales.`);
+            return;
+        }
+        
         if (!selectedProductId || selectedProductId === '') {
             alert('Please select a product');
             return;
@@ -520,15 +545,27 @@
         }
     };
     
+    // ========== CLOSE DAY ==========
     window.closeDay = async () => {
         const today = selectedSalesDate;
+        
+        // Check if already closed
+        const closing = dailyClosings.find(c => c.date === today);
+        if (closing) {
+            alert(`📅 ${today} is already CLOSED!`);
+            return;
+        }
+        
         if (currentDaySales.isClosed) return alert('Already closed');
-        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) return alert('No sales to close');
+        if (currentDaySales.totalKg === 0 && currentDaySales.cashAmount === 0 && currentDaySales.mpesaAmount === 0) {
+            return alert('No sales to close. Add at least one sale first.');
+        }
+        
         const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
         
         let salesSummary = '';
         if (currentDaySales.salesByProduct) {
-            salesSummary = '\n\nSales by Product:';
+            salesSummary = '\n\n📊 Sales Summary:';
             for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
                 const productInfo = inventory.find(p => p.name === product);
                 const revenue = kg * (productInfo?.priceKg || 0);
@@ -536,7 +573,7 @@
             }
         }
         
-        if (confirm(`Close ${today}?\nTotal KG: ${roundToTwo(currentDaySales.totalKg)} kg\nCash: KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}\nM-Pesa: KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}\nTotal Revenue: KES ${roundCurrency(total).toLocaleString()}${salesSummary}`)) {
+        if (confirm(`🔒 CLOSE DAY: ${today}\n\n📦 Total KG: ${roundToTwo(currentDaySales.totalKg)} kg\n💰 Cash: KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}\n📱 M-Pesa: KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}\n💵 Total Revenue: KES ${roundCurrency(total).toLocaleString()}${salesSummary}\n\n⚠️ Once closed, you cannot add more sales for this day.\n\nDo you want to close this day?`)) {
             const result = await apiCall('/api/close-day', 'POST', { 
                 date: today,
                 closedBy: currentUser?.fullName || 'System'
@@ -545,7 +582,9 @@
                 await loadSalesForDate(today);
                 await loadAllData();
                 renderApp();
-                alert('✅ Day closed!');
+                alert(`✅ Day ${today} closed successfully!`);
+            } else {
+                alert('Failed to close day.');
             }
         }
     };
@@ -1200,7 +1239,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.6.0 (Restock + Edit)\n\n✅ Restock → ADDS to existing stock\n✅ Edit → SET stock to exact value\n✅ Track restock dates\n✅ Green badge = Recent restock (7 days)\n✅ Yellow badge = Older restock\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.7.0 (Open/Closed Day Management)\n\n✅ Select any date - shows if OPEN or CLOSED\n✅ Open days: Can add and delete sales\n✅ Closed days: View only\n✅ Auto-start day when selecting new date\n✅ Continue adding to open day until closed\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // ========== RENDER FUNCTIONS ==========
@@ -1325,10 +1364,25 @@
         return `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody></div>`;
     }
     
+    // ========== RENDER SALES WITH OPEN/CLOSED STATUS ==========
     function renderSales() {
         const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${roundCurrency(p.priceKg)}/kg ${p.restockDate ? '📅 ' + formatDate(p.restockDate) : ''}</option>`).join('');
-        const isClosed = currentDaySales.isClosed;
-        const statusText = isClosed ? '🔒 Closed' : '🟢 Open';
+        const date = selectedSalesDate;
+        
+        // Check if this date is closed in dailyClosings
+        const closingRecord = dailyClosings.find(c => c.date === date);
+        const isClosedPermanently = closingRecord !== undefined;
+        const hasSales = currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0;
+        const statusText = isClosedPermanently ? '🔒 Closed' : '🟢 Open';
+        
+        // Calculate total revenue from sales
+        let totalRevenue = 0;
+        if (hasSales) {
+            for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
+                const productInfo = inventory.find(p => p.name === product);
+                totalRevenue += kg * (productInfo?.priceKg || 0);
+            }
+        }
         
         return `<div class="sales-panel">
             <div class="sales-card"><h3>📦 Total KG</h3><div class="amount">${roundToTwo(currentDaySales.totalKg)} kg</div></div>
@@ -1342,8 +1396,24 @@
                 <label><i class="fas fa-calendar-alt"></i> Sale Date:</label>
                 <input type="date" id="salesDatePicker" value="${selectedSalesDate}" onchange="changeSalesDate()">
                 <span class="alert-info" style="margin:0; padding:5px 10px;">Status: ${statusText}</span>
-                ${isClosed ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> Day closed. Choose another date to add sales.</span>' : '<span style="color:#10b981; margin-left:10px;"><i class="fas fa-check-circle"></i> Day is open for sales</span>'}
+                ${isClosedPermanently ? '<span style="color:#ef4444; margin-left:10px;"><i class="fas fa-lock"></i> This day is CLOSED. View only.</span>' : '<span style="color:#10b981; margin-left:10px;"><i class="fas fa-check-circle"></i> Day is OPEN for sales</span>'}
             </div>
+            ${isClosedPermanently ? `
+            <div class="alert-info alert-closed">
+                <i class="fas fa-info-circle"></i> 
+                <strong>${selectedSalesDate} is CLOSED.</strong><br>
+                You can view the sales below but cannot add more.
+                ${hasSales ? ` Total: ${roundToTwo(currentDaySales.totalKg)} kg sold.` : ''}
+            </div>
+            ` : `
+            <div class="alert-info alert-open">
+                <i class="fas fa-info-circle"></i> 
+                <strong>${selectedSalesDate} is OPEN.</strong><br>
+                ${hasSales ? `You have ${Object.keys(currentDaySales.salesByProduct).length} product(s) added. Continue adding or close the day when done.` : 'No sales yet. Select a product and add below.'}
+            </div>
+            `}
+            
+            ${!isClosedPermanently ? `
             <div class="form-group">
                 <label>🥩 Select Product</label>
                 <select id="saleProduct" class="product-select" onchange="onProductChange()">
@@ -1365,18 +1435,21 @@
                 <div class="calc-note"><i class="fas fa-calculator"></i> KG is automatically calculated from Cash + M-Pesa divided by product price</div>
             </div>
             <div class="action-buttons">
-                <button class="btn btn-success" onclick="updateDailySales()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-plus-circle"></i> Add Sale</button>
-                <button class="btn btn-warning" onclick="closeDay()" ${isClosed ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}><i class="fas fa-lock"></i> Close Day</button>
+                <button class="btn btn-success" onclick="updateDailySales()"><i class="fas fa-plus-circle"></i> Add Sale</button>
+                <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>
             </div>
-            <div class="alert-info" style="margin-top:15px;"><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Change the date above to record sales for any day. The day automatically opens when you select a date!</div>
+            ` : ''}
         </div>
         
-        ${currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0 ? `
+        ${hasSales ? `
         <div class="card">
-            <div class="card-header"><h2>📊 Sales for ${selectedSalesDate}</h2></div>
+            <div class="card-header">
+                <h2>📊 Sales for ${selectedSalesDate}</h2>
+                <span class="role-badge">${isClosedPermanently ? '🔒 CLOSED' : '🟢 OPEN'} • ${Object.keys(currentDaySales.salesByProduct).length} Product(s)</span>
+            </div>
             <div class="table-container">
                 <table class="data-table">
-                    <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Revenue (KES)</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Price/kg</th><th>Revenue (KES)</th>${!isClosedPermanently ? '<th>Action</th>' : ''}</tr></thead>
                     <tbody>
                         ${Object.entries(currentDaySales.salesByProduct).map(([product, kg]) => {
                             const productInfo = inventory.find(p => p.name === product);
@@ -1385,16 +1458,31 @@
                             return `<tr>
                                 <td style="padding:8px">${product}</td>
                                 <td style="padding:8px">${roundToTwo(kg)} kg</td>
-                                <td style="padding:8px">KES ${roundCurrency(revenue).toLocaleString()} (${roundCurrency(pricePerKg)}/kg)</td>
-                                <td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td>
+                                <td style="padding:8px">KES ${roundCurrency(pricePerKg)}</td>
+                                <td style="padding:8px">KES ${roundCurrency(revenue).toLocaleString()}</td>
+                                ${!isClosedPermanently ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td>` : ''}
                             </tr>`;
                         }).join('')}
+                        <tr style="background-color: #f0fdf4; font-weight: bold;">
+                            <td colspan="3" style="text-align: right; padding: 12px;">TOTAL REVENUE:</td>
+                            <td colspan="${isClosedPermanently ? '1' : '2'}" style="padding: 12px; color: #10b981;">
+                                KES ${roundCurrency(totalRevenue).toLocaleString()}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
-                <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
             </div>
+            ${isClosedPermanently ? `
+            <div class="calc-note" style="padding:10px; text-align:center; background:#fef3c7; border-radius:8px; margin-top:10px;">
+                <i class="fas fa-lock"></i> This day is CLOSED. No changes can be made.
+            </div>
+            ` : `
+            <div class="calc-note" style="padding:10px; text-align:right;"><i class="fas fa-info-circle"></i> Revenue = Quantity × Price per kg</div>
+            `}
         </div>
-        ` : `<div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. Select a product and add sale above.</div>`}`;
+        ` : `
+        <div class="alert-info"><i class="fas fa-info-circle"></i> No sales recorded for ${selectedSalesDate}. ${isClosedPermanently ? 'This day is closed.' : 'Select a product and add sale above.'}</div>
+        `}`;
     }
     
     function renderReports() {
