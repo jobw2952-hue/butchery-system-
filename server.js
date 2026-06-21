@@ -13,11 +13,11 @@ const DEFAULT_DATA = {
         { id: 2, username: "admin1", password: "admin123", role: "admin", fullName: "John Admin", email: "john@butchery.com", phone: "0723456789", isActive: true, createdAt: "", lastLogin: null, permissions: ["sales", "inventory_view", "reports_view"] }
     ],
     inventory: [
-        { id: 1, name: "Cow Sirloin", animal: "Cow", stockKg: 45.5, priceKg: 850, costKg: 560, lowStockAlert: 10 },
-        { id: 2, name: "Goat Leg", animal: "Goat", stockKg: 22.3, priceKg: 950, costKg: 640, lowStockAlert: 8 },
-        { id: 3, name: "Chicken Whole", animal: "Chicken", stockKg: 35.0, priceKg: 550, costKg: 370, lowStockAlert: 12 },
-        { id: 4, name: "Fresh Liver", animal: "Liver", stockKg: 12.8, priceKg: 450, costKg: 300, lowStockAlert: 5 },
-        { id: 5, name: "Matumbo (Tripe)", animal: "Cow", stockKg: 18.5, priceKg: 380, costKg: 250, lowStockAlert: 6 }
+        { id: 1, name: "Cow Sirloin", animal: "Cow", stockKg: 45.5, priceKg: 850, costKg: 560, lowStockAlert: 10, restockDate: "2026-06-15" },
+        { id: 2, name: "Goat Leg", animal: "Goat", stockKg: 22.3, priceKg: 950, costKg: 640, lowStockAlert: 8, restockDate: "2026-06-10" },
+        { id: 3, name: "Chicken Whole", animal: "Chicken", stockKg: 35.0, priceKg: 550, costKg: 370, lowStockAlert: 12, restockDate: "2026-06-01" },
+        { id: 4, name: "Fresh Liver", animal: "Liver", stockKg: 12.8, priceKg: 450, costKg: 300, lowStockAlert: 5, restockDate: "2026-06-18" },
+        { id: 5, name: "Matumbo (Tripe)", animal: "Cow", stockKg: 18.5, priceKg: 380, costKg: 250, lowStockAlert: 6, restockDate: "2026-06-05" }
     ],
     dailyClosings: [],
     currentDaySales: { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} },
@@ -78,7 +78,10 @@ function sendJSON(res, data, status = 200) {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
     });
     res.end(JSON.stringify(data));
 }
@@ -86,7 +89,12 @@ function sendJSON(res, data, status = 200) {
 function serveStatic(res, filePath, contentType) {
     try {
         const content = fs.readFileSync(filePath);
-        res.writeHead(200, { 'Content-Type': contentType || 'text/html' });
+        res.writeHead(200, { 
+            'Content-Type': contentType || 'text/html',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
         res.end(content);
     } catch (error) {
         res.writeHead(404);
@@ -230,7 +238,8 @@ const server = http.createServer(async (req, res) => {
                     stockKg: body.stockKg || 0,
                     priceKg: body.priceKg || 0,
                     costKg: body.costKg || (body.priceKg * 0.7),
-                    lowStockAlert: body.lowStockAlert || 10
+                    lowStockAlert: body.lowStockAlert || 10,
+                    restockDate: body.restockDate || new Date().toISOString().split('T')[0]  // ✅ ADDED
                 };
                 data.inventory.push(newItem);
                 saveData(data);
@@ -252,6 +261,7 @@ const server = http.createServer(async (req, res) => {
                 if (body.priceKg !== undefined) item.priceKg = body.priceKg;
                 if (body.costKg !== undefined) item.costKg = body.costKg;
                 if (body.lowStockAlert !== undefined) item.lowStockAlert = body.lowStockAlert;
+                if (body.restockDate !== undefined) item.restockDate = body.restockDate;  // ✅ ADDED
                 saveData(data);
                 sendJSON(res, item);
                 return;
@@ -595,6 +605,7 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('3. At end of day, click "Close Day"');
     console.log('4. Next day, click "Start New Day"');
     console.log('5. Add expenses when they occur');
+    console.log('6. Track restock dates in inventory');
     console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');
     console.log('='.repeat(50));
@@ -603,5 +614,4 @@ server.listen(PORT, '0.0.0.0', () => {
 process.on('SIGINT', () => {
     console.log('\nServer stopped.');
     process.exit(0);
-});/ /   F o r c e   r e b u i l d  
- 
+});
