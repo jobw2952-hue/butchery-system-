@@ -136,7 +136,7 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v8.1.0 📊 Profit Tracking</div>
+<div class="version-badge" onclick="showVersionInfo()">v8.2.0 📊 Profit Dashboard</div>
 
 <script>
     // ========== BISMILAH BUTCHERY PRO - WITH PROFIT TRACKING ==========
@@ -1336,7 +1336,7 @@
         sevenDayProfit = Math.round(sevenDayProfit * 100) / 100;
         const status = sevenDayProfit >= 0 ? '💰 PROFIT' : '📉 LOSS';
         
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 8.1.0 (Profit Tracking)\n\n✅ 7-Day Revenue & Profit on Dashboard\n✅ Gross Profit & Net Profit in Reports\n✅ Cost of Goods Sold tracking\n✅ Inventory only deducts on close\n✅ Restock → ADDS to existing stock\n✅ Edit → SET stock to exact value\n\n📊 7-Day Profit: KES ${roundCurrency(sevenDayProfit).toLocaleString()} ${status}\n📅 ${sevenDaySales.length} days closed\n\nData Status: ${dailyClosings.length} total closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 8.2.0 (Profit Dashboard)\n\n✅ 7-Day Revenue & Profit on Dashboard\n✅ Gross Profit & Net Profit in Reports\n✅ Cost of Goods Sold tracking\n✅ Inventory only deducts on close\n✅ Restock → ADDS to existing stock\n✅ Edit → SET stock to exact value\n\n📊 7-Day Profit: KES ${roundCurrency(sevenDayProfit).toLocaleString()} ${status}\n📅 ${sevenDaySales.length} days closed\n\nData Status: ${dailyClosings.length} total closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // ========== RENDER FUNCTIONS ==========
@@ -1354,6 +1354,7 @@
         
         // Calculate 7-day profit (Revenue - Cost of Goods Sold)
         let sevenDayProfit = 0;
+        let totalCost = 0;
         for (const closing of sevenDaySales) {
             if (closing.salesByProduct) {
                 for (const [productName, kgSold] of Object.entries(closing.salesByProduct)) {
@@ -1362,6 +1363,7 @@
                         const revenue = kgSold * (product.priceKg || 0);
                         const cost = kgSold * (product.costKg || 0);
                         sevenDayProfit += (revenue - cost);
+                        totalCost += cost;
                     }
                 }
             }
@@ -1369,11 +1371,15 @@
         sevenDayProfit = Math.round(sevenDayProfit * 100) / 100;
         const profitMargin = sevenDayRevenue > 0 ? ((sevenDayProfit / sevenDayRevenue) * 100).toFixed(1) : 0;
         
+        // If no closed days, show a message
+        const hasData = sevenDaySales.length > 0;
+        const profitClass = hasData ? (sevenDayProfit >= 0 ? 'profit-card' : 'loss-card') : '';
+        
         return `<div class="stats-grid">
             <div class="stat-card"><div class="stat-title">Today's Sales</div><div class="stat-value">KES ${roundCurrency(todayTotal).toLocaleString()}</div><div class="stat-change">${roundToTwo(currentDaySales.totalKg)} kg sold today</div></div>
             <div class="stat-card"><div class="stat-title">Inventory Value</div><div class="stat-value">KES ${roundCurrency(totalInventoryValue).toLocaleString()}</div><div class="stat-change">Based on cost price</div></div>
-            <div class="stat-card ${sevenDayProfit >= 0 ? 'profit-card' : 'loss-card'}"><div class="stat-title">7-Day Profit</div><div class="stat-value">KES ${roundCurrency(sevenDayProfit).toLocaleString()}</div><div class="stat-change">${sevenDaySales.length} days closed • Margin: ${profitMargin}%</div></div>
-            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">KES ${roundCurrency(sevenDayRevenue).toLocaleString()}</div><div class="stat-change">From ${sevenDaySales.length} closed days</div></div>
+            <div class="stat-card ${profitClass}"><div class="stat-title">7-Day Profit</div><div class="stat-value">${hasData ? 'KES ' + roundCurrency(sevenDayProfit).toLocaleString() : '--'}</div><div class="stat-change">${hasData ? sevenDaySales.length + ' days closed • Margin: ' + profitMargin + '%' : 'No closed days yet'}</div></div>
+            <div class="stat-card"><div class="stat-title">7-Day Revenue</div><div class="stat-value">${hasData ? 'KES ' + roundCurrency(sevenDayRevenue).toLocaleString() : '--'}</div><div class="stat-change">${hasData ? 'From ' + sevenDaySales.length + ' closed days' : 'No closed days yet'}</div></div>
         </div>
         <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
     }

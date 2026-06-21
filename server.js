@@ -20,7 +20,7 @@ const DEFAULT_DATA = {
         { id: 5, name: "Matumbo (Tripe)", animal: "Cow", stockKg: 18.5, priceKg: 380, costKg: 250, lowStockAlert: 6, restockDate: "2026-06-05" }
     ],
     dailyClosings: [],
-    currentDaySales: { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} },
+    currentDaySales: { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {}, pendingDeductions: {} },
     expenses: [],
     activityLogs: [],
     nextId: { inventory: 6, expenses: 1, users: 3, closings: 1 }
@@ -265,17 +265,13 @@ const server = http.createServer(async (req, res) => {
                 const body = await parseBody(req);
                 const item = data.inventory[itemIndex];
                 
-                // Track old stock for logging
                 const oldStock = item.stockKg;
                 const stockToAdd = body.stockToAdd || 0;
                 
-                // Update basic info
                 if (body.name) item.name = body.name;
                 if (body.animal) item.animal = body.animal;
                 
-                // Check if this is a restock (ADD to existing) or edit (SET exact value)
                 if (body.isRestock) {
-                    // ✅ RESTOCK: ADD to existing stock
                     if (stockToAdd > 0) {
                         item.stockKg = Math.round((item.stockKg + stockToAdd) * 100) / 100;
                         
@@ -287,7 +283,6 @@ const server = http.createServer(async (req, res) => {
                         });
                     }
                 } else {
-                    // ✅ EDIT: SET exact stock value
                     if (body.stockKg !== undefined) {
                         item.stockKg = Math.round(body.stockKg * 100) / 100;
                         
@@ -300,7 +295,6 @@ const server = http.createServer(async (req, res) => {
                     }
                 }
                 
-                // Always update these
                 if (body.priceKg !== undefined) item.priceKg = body.priceKg;
                 if (body.costKg !== undefined) item.costKg = body.costKg;
                 if (body.lowStockAlert !== undefined) item.lowStockAlert = body.lowStockAlert;
@@ -332,7 +326,7 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-        // ========== CURRENT SALES (with Inventory Deduction) ==========
+        // ========== CURRENT SALES (No Inventory Deduction until Close) ==========
         if (pathname === '/api/current-sales') {
             if (method === 'GET') {
                 sendJSON(res, data.currentDaySales);
@@ -342,8 +336,7 @@ const server = http.createServer(async (req, res) => {
                 const body = await parseBody(req);
                 const saleDate = body.date || new Date().toISOString().split('T')[0];
                 
-                // Initialize day if different date
-                if (data.currentDaySales.date !== saleDate || data.currentDaySales.isClosed) {
+                if (data.currentDaySales.date !== saleDate || data.currentDaySales.isClosed || !data.currentDaySales.pendingDeductions) {
                     const closing = data.dailyClosings.find(c => c.date === saleDate);
                     if (closing) {
                         sendJSON(res, { error: 'This day is already closed' }, 400);
@@ -355,7 +348,8 @@ const server = http.createServer(async (req, res) => {
                         cashAmount: 0,
                         mpesaAmount: 0,
                         isClosed: false,
-                        salesByProduct: {}
+                        salesByProduct: {},
+                        pendingDeductions: {}
                     };
                 }
 
@@ -370,15 +364,6 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-                if (product.stockKg < body.kg) {
-                    sendJSON(res, { 
-                        error: `Not enough stock! Only ${product.stockKg.toFixed(2)} kg available for ${product.name}` 
-                    }, 400);
-                    return;
-                }
-
-                product.stockKg = Math.round((product.stockKg - body.kg) * 100) / 100;
-                
                 data.currentDaySales.totalKg = Math.round((data.currentDaySales.totalKg + body.kg) * 100) / 100;
                 data.currentDaySales.cashAmount = Math.round((data.currentDaySales.cashAmount + (body.cash || 0)) * 100) / 100;
                 data.currentDaySales.mpesaAmount = Math.round((data.currentDaySales.mpesaAmount + (body.mpesa || 0)) * 100) / 100;
@@ -387,19 +372,23 @@ const server = http.createServer(async (req, res) => {
                 const productName = body.productName || product.name;
                 data.currentDaySales.salesByProduct[productName] = 
                     Math.round(((data.currentDaySales.salesByProduct[productName] || 0) + body.kg) * 100) / 100;
+                
+                data.currentDaySales.pendingDeductions = data.currentDaySales.pendingDeductions || {};
+                data.currentDaySales.pendingDeductions[productName] = 
+                    Math.round(((data.currentDaySales.pendingDeductions[productName] || 0) + body.kg) * 100) / 100;
 
                 data.activityLogs.push({
                     timestamp: new Date().toISOString(),
                     user: body.userName || 'System',
-                    action: 'SALE',
-                    details: `${body.kg}kg of ${productName} sold for KES ${((body.cash || 0) + (body.mpesa || 0)).toFixed(2)}`
+                    action: 'SALE_ADDED',
+                    details: `${body.kg}kg of ${productName} added (pending deduction)`
                 });
 
                 saveData(data);
                 sendJSON(res, { 
                     success: true, 
                     sales: data.currentDaySales,
-                    inventory: product
+                    message: 'Sale added. Inventory will be deducted when day is closed.'
                 });
                 return;
             }
@@ -409,6 +398,9 @@ const server = http.createServer(async (req, res) => {
         if (pathname === '/api/sales-by-date' && method === 'GET') {
             const date = parsedUrl.query.date || new Date().toISOString().split('T')[0];
             if (data.currentDaySales.date === date && !data.currentDaySales.isClosed) {
+                if (!data.currentDaySales.pendingDeductions) {
+                    data.currentDaySales.pendingDeductions = {};
+                }
                 sendJSON(res, data.currentDaySales);
             } else {
                 const closing = data.dailyClosings.find(c => c.date === date);
@@ -419,10 +411,11 @@ const server = http.createServer(async (req, res) => {
                         totalKg: closing.totalKg, 
                         cashAmount: closing.cashAmount, 
                         mpesaAmount: closing.mpesaAmount, 
-                        salesByProduct: closing.salesByProduct || {} 
+                        salesByProduct: closing.salesByProduct || {},
+                        pendingDeductions: {} 
                     });
                 } else {
-                    sendJSON(res, { date, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} });
+                    sendJSON(res, { date, totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {}, pendingDeductions: {} });
                 }
             }
             return;
@@ -445,7 +438,8 @@ const server = http.createServer(async (req, res) => {
                 cashAmount: 0,
                 mpesaAmount: 0,
                 isClosed: false,
-                salesByProduct: {}
+                salesByProduct: {},
+                pendingDeductions: {}
             };
             
             data.activityLogs.push({
@@ -470,6 +464,25 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
+            const pendingDeductions = data.currentDaySales.pendingDeductions || {};
+            let deductionSummary = '';
+            let allDeducted = true;
+            
+            for (const [productName, kg] of Object.entries(pendingDeductions)) {
+                const product = data.inventory.find(p => p.name === productName);
+                if (product) {
+                    if (product.stockKg < kg) {
+                        deductionSummary += `\n⚠️ ${productName}: Only ${product.stockKg}kg available, deducting ${kg}kg (INSUFFICIENT STOCK!)`;
+                        allDeducted = false;
+                    }
+                    product.stockKg = Math.round((product.stockKg - kg) * 100) / 100;
+                    deductionSummary += `\n✅ ${productName}: -${kg}kg (New stock: ${product.stockKg}kg)`;
+                } else {
+                    deductionSummary += `\n❌ ${productName}: Product not found in inventory`;
+                    allDeducted = false;
+                }
+            }
+
             const totalRevenue = (data.currentDaySales.cashAmount || 0) + (data.currentDaySales.mpesaAmount || 0);
             
             const closingRecord = {
@@ -481,7 +494,8 @@ const server = http.createServer(async (req, res) => {
                 totalRevenue: totalRevenue,
                 closedBy: body.closedBy || 'System',
                 closedAt: new Date().toISOString(),
-                salesByProduct: data.currentDaySales.salesByProduct || {}
+                salesByProduct: data.currentDaySales.salesByProduct || {},
+                pendingDeductions: data.currentDaySales.pendingDeductions || {}
             };
 
             data.dailyClosings.push(closingRecord);
@@ -495,11 +509,16 @@ const server = http.createServer(async (req, res) => {
             });
             
             saveData(data);
-            sendJSON(res, { success: true, record: closingRecord });
+            sendJSON(res, { 
+                success: true, 
+                record: closingRecord,
+                deductions: deductionSummary,
+                allDeducted: allDeducted
+            });
             return;
         }
 
-        // ========== DELETE SALE ENTRY (Restores Inventory) ==========
+        // ========== DELETE SALE ENTRY ==========
         if (pathname === '/api/delete-sale' && method === 'POST') {
             const body = await parseBody(req);
             const productName = body.productName;
@@ -510,9 +529,14 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            const product = data.inventory.find(p => p.name === productName);
-            if (product) {
-                product.stockKg = Math.round((product.stockKg + kgToRemove) * 100) / 100;
+            if (data.currentDaySales.pendingDeductions && data.currentDaySales.pendingDeductions[productName]) {
+                const currentPending = data.currentDaySales.pendingDeductions[productName];
+                const newPending = Math.round((currentPending - kgToRemove) * 100) / 100;
+                if (newPending <= 0) {
+                    delete data.currentDaySales.pendingDeductions[productName];
+                } else {
+                    data.currentDaySales.pendingDeductions[productName] = newPending;
+                }
             }
 
             if (data.currentDaySales.salesByProduct && data.currentDaySales.salesByProduct[productName]) {
@@ -597,36 +621,24 @@ const server = http.createServer(async (req, res) => {
 
         // ========== RESET ALL (Keep Inventory) ==========
         if (pathname === '/api/reset-all' && method === 'POST') {
-            // ✅ KEEP inventory as-is - DO NOT reset to default
-            // Only reset sales, expenses, and activity logs
-            
-            // Reset daily closings (sales records)
             data.dailyClosings = [];
-            
-            // Reset current day sales
             data.currentDaySales = { 
                 date: "", 
                 totalKg: 0, 
                 cashAmount: 0, 
                 mpesaAmount: 0, 
                 isClosed: false, 
-                salesByProduct: {} 
+                salesByProduct: {},
+                pendingDeductions: {}
             };
-            
-            // Reset expenses
             data.expenses = [];
-            
-            // Reset activity logs
             data.activityLogs = [];
-            
-            // Reset nextId counters (but keep inventory counter)
             data.nextId = { 
-                inventory: data.nextId?.inventory || 6,  // ✅ KEEP inventory counter
+                inventory: data.nextId?.inventory || 6,
                 expenses: 1, 
                 users: 3, 
                 closings: 1 
             };
-            
             saveData(data);
             sendJSON(res, { 
                 success: true, 
@@ -675,12 +687,12 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('='.repeat(50));
     console.log('📖 DAILY WORKFLOW:');
     console.log('1. Login as Admin');
-    console.log('2. Record each sale → Inventory auto-deducted');
-    console.log('3. At end of day, click "Close Day"');
-    console.log('4. Add expenses when they occur');
-    console.log('5. Restock → ADDS to existing stock');
-    console.log('6. Edit → SET stock to exact value');
-    console.log('7. Reset All Data → KEEPS inventory, resets sales/expenses');
+    console.log('2. Add sales → NO inventory deduction until close');
+    console.log('3. View pending deductions before closing');
+    console.log('4. Close day → ALL inventory deducted');
+    console.log('5. Add expenses when they occur');
+    console.log('6. Restock → ADDS to existing stock');
+    console.log('7. Edit → SET stock to exact value');
     console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');
     console.log('='.repeat(50));
