@@ -93,6 +93,7 @@
         .alert-info { background: #e0f2fe; padding: 12px; border-radius: 10px; margin-top: 15px; color: #0369a1; }
         .alert-open { background: #dbeafe; color: #1e40af; border-left: 4px solid #3b82f6; }
         .alert-closed { background: #fef3c7; color: #92400e; border-left: 4px solid #f59e0b; }
+        .alert-pending { background: #fef3c7; color: #92400e; border-left: 4px solid #f59e0b; }
         .password-cell { display: flex; align-items: center; gap: 8px; font-family: monospace; }
         .eye-icon { cursor: pointer; color: #94a3b8; margin-left: 5px; }
         .eye-icon:hover { color: #3b82f6; }
@@ -116,6 +117,7 @@
         .restock-badge { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
         .restock-badge.old { background: #fef3c7; color: #92400e; }
         .restock-badge.recent { background: #d1fae5; color: #065f46; }
+        .pending-badge { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
         .status-open { color: #10b981; font-weight: bold; }
         .status-closed { color: #ef4444; font-weight: bold; }
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .sales-panel { grid-template-columns: 1fr; } .progress-section { grid-template-columns: 1fr; } .report-selector { flex-direction: column; align-items: stretch; } .date-range { justify-content: center; } }
@@ -124,10 +126,10 @@
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.7.0 📅 Open/Closed Day Management</div>
+<div class="version-badge" onclick="showVersionInfo()">v8.0.0 📦 Deduct on Close</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - OPEN/CLOSED DAY MANAGEMENT ==========
+    // ========== BISMILAH BUTCHERY PRO - DEDUCT ON CLOSE ==========
     
     function roundToTwo(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
@@ -189,7 +191,7 @@
     let users = [];
     let inventory = [];
     let dailyClosings = [];
-    let currentDaySales = { date: '', totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} };
+    let currentDaySales = { date: '', totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {}, pendingDeductions: {} };
     let expenses = [];
     let activityLogs = [];
     
@@ -231,7 +233,7 @@
         users = usersData || [];
         inventory = invData || [];
         dailyClosings = closingsData || [];
-        currentDaySales = salesData || { date: new Date().toISOString().split('T')[0], totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} };
+        currentDaySales = salesData || { date: new Date().toISOString().split('T')[0], totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {}, pendingDeductions: {} };
         expenses = expensesData || [];
         activityLogs = logsData || [];
     }
@@ -242,6 +244,10 @@
         const salesData = await apiCall(`/api/sales-by-date?date=${date}`);
         if (salesData) {
             currentDaySales = salesData;
+            // Ensure pendingDeductions exists
+            if (!currentDaySales.pendingDeductions) {
+                currentDaySales.pendingDeductions = {};
+            }
             renderApp();
         }
     }
@@ -292,21 +298,18 @@
         renderApp();
     };
     
-    // ========== CHANGE SALES DATE - CHECK IF CLOSED ==========
+    // ========== CHANGE SALES DATE ==========
     window.changeSalesDate = async () => {
         const datePicker = document.getElementById('salesDatePicker');
         if (datePicker) {
             selectedSalesDate = datePicker.value;
             
-            // Check if this date is already closed
             const closing = dailyClosings.find(c => c.date === selectedSalesDate);
             
             if (closing) {
-                // Day is closed - load the closed sales data
                 await loadSalesForDate(selectedSalesDate);
                 renderApp();
             } else {
-                // Day is open - start or continue the day
                 await apiCall('/api/new-day', 'POST', { date: selectedSalesDate });
                 await loadSalesForDate(selectedSalesDate);
                 renderApp();
@@ -342,7 +345,7 @@
     };
     
     window.deleteSaleEntry = async (productName, kg) => {
-        if (!confirm(`Delete sale: ${kg}kg of ${productName}? This will restore stock.`)) {
+        if (!confirm(`Delete sale: ${kg}kg of ${productName}? This will remove the pending deduction.`)) {
             return;
         }
         
@@ -356,7 +359,7 @@
             await loadSalesForDate(selectedSalesDate);
             await loadAllData();
             renderApp();
-            alert(`✅ Sale entry deleted! Stock restored for ${productName}.`);
+            alert(`✅ Sale entry deleted! Pending deduction removed for ${productName}.`);
         } else {
             alert('Failed to delete sale entry.');
         }
@@ -490,7 +493,7 @@
         renderApp();
     };
     
-    // Sales functions
+    // ========== UPDATE DAILY SALES (No inventory deduction) ==========
     window.updateDailySales = async () => {
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
@@ -517,9 +520,12 @@
         const product = inventory.find(p => p.id == selectedProductId);
         if (!product) return alert('Product not found');
         
+        // ✅ NO stock check here - stock will be checked on close
+        // We still want to warn if stock is low
         if (product.stockKg < kg) {
-            alert(`Not enough stock! Only ${roundToTwo(product.stockKg)} kg available for ${product.name}`);
-            return;
+            if (!confirm(`⚠️ Warning: Only ${roundToTwo(product.stockKg)} kg available for ${product.name}. You are trying to sell ${kg}kg.\n\nThis may cause insufficient stock when closing the day.\n\nContinue anyway?`)) {
+                return;
+            }
         }
         
         const result = await apiCall('/api/current-sales', 'POST', { 
@@ -536,7 +542,7 @@
             await loadSalesForDate(saleDate);
             await loadAllData();
             renderApp();
-            alert(`✅ Sold ${roundToTwo(kg)}kg of ${product.name} on ${saleDate}!`);
+            alert(`✅ Added ${roundToTwo(kg)}kg of ${product.name} on ${saleDate}!\n\n📌 Inventory will be deducted when you close the day.`);
             if (document.getElementById('dailyKg')) document.getElementById('dailyKg').value = '';
             if (document.getElementById('dailyCash')) document.getElementById('dailyCash').value = '';
             if (document.getElementById('dailyMpesa')) document.getElementById('dailyMpesa').value = '';
@@ -548,7 +554,6 @@
     window.closeDay = async () => {
         const today = selectedSalesDate;
         
-        // Check if already closed
         const closing = dailyClosings.find(c => c.date === today);
         if (closing) {
             alert(`📅 ${today} is already CLOSED!`);
@@ -561,10 +566,13 @@
         }
         
         const total = currentDaySales.cashAmount + currentDaySales.mpesaAmount;
+        const pendingDeductions = currentDaySales.pendingDeductions || {};
         
-        let salesSummary = '';
+        let salesSummary = '\n\n📊 Sales Summary:';
+        let pendingSummary = '\n\n⏳ Pending Deductions (will be deducted from inventory):';
+        let hasPending = false;
+        
         if (currentDaySales.salesByProduct) {
-            salesSummary = '\n\n📊 Sales Summary:';
             for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
                 const productInfo = inventory.find(p => p.name === product);
                 const revenue = kg * (productInfo?.priceKg || 0);
@@ -572,7 +580,21 @@
             }
         }
         
-        if (confirm(`🔒 CLOSE DAY: ${today}\n\n📦 Total KG: ${roundToTwo(currentDaySales.totalKg)} kg\n💰 Cash: KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}\n📱 M-Pesa: KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}\n💵 Total Revenue: KES ${roundCurrency(total).toLocaleString()}${salesSummary}\n\n⚠️ Once closed, you cannot add more sales for this day.\n\nDo you want to close this day?`)) {
+        if (pendingDeductions) {
+            for (const [product, kg] of Object.entries(pendingDeductions)) {
+                const productInfo = inventory.find(p => p.name === product);
+                const currentStock = productInfo?.stockKg || 0;
+                const willBeShort = currentStock < kg;
+                pendingSummary += `\n- ${product}: ${roundToTwo(kg)} kg (Current stock: ${roundToTwo(currentStock)} kg)${willBeShort ? ' ⚠️ INSUFFICIENT STOCK!' : ''}`;
+                hasPending = true;
+            }
+        }
+        
+        if (!hasPending) {
+            pendingSummary = '\n\n✅ No pending deductions.';
+        }
+        
+        if (confirm(`🔒 CLOSE DAY: ${today}\n\n📦 Total KG: ${roundToTwo(currentDaySales.totalKg)} kg\n💰 Cash: KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}\n📱 M-Pesa: KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}\n💵 Total Revenue: KES ${roundCurrency(total).toLocaleString()}${salesSummary}${pendingSummary}\n\n⚠️ This will deduct all pending stock from inventory.\n\nDo you want to close this day?`)) {
             const result = await apiCall('/api/close-day', 'POST', { 
                 date: today,
                 closedBy: currentUser?.fullName || 'System'
@@ -581,7 +603,10 @@
                 await loadSalesForDate(today);
                 await loadAllData();
                 renderApp();
-                alert(`✅ Day ${today} closed successfully!`);
+                const message = result.allDeducted ? 
+                    `✅ Day ${today} closed successfully!\n\nAll stock deducted from inventory.` :
+                    `✅ Day ${today} closed!\n\n⚠️ Some products had insufficient stock. Please check inventory.`;
+                alert(message);
             } else {
                 alert('Failed to close day.');
             }
@@ -831,7 +856,6 @@
     
     // ========== PRODUCT FUNCTIONS ==========
     
-    // Add Product
     window.openAddProductModal = () => {
         if (!isSuperAdmin()) return alert('Only Super Admin can add products');
         
@@ -931,7 +955,7 @@
         }
     };
     
-    // ========== OPEN RESTOCK MODAL (ADDS STOCK ONLY) ==========
+    // ========== OPEN RESTOCK MODAL ==========
     window.openRestockModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
@@ -977,7 +1001,6 @@
         if (existing) existing.remove();
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         
-        // Live preview for new total
         const stockInput = document.getElementById('restockAddStock');
         if (stockInput) {
             const currentStockValue = currentStock;
@@ -997,7 +1020,6 @@
         if (modal) modal.remove();
     };
     
-    // ========== SUBMIT RESTOCK (ADDS STOCK ONLY) ==========
     window.submitRestock = async (productId) => {
         const stockToAdd = parseFloat(document.getElementById('restockAddStock')?.value) || 0;
         const restockDate = document.getElementById('restockDate')?.value || new Date().toISOString().split('T')[0];
@@ -1025,7 +1047,7 @@
         }
     };
     
-    // ========== OPEN EDIT PRODUCT MODAL (EDIT ALL DETAILS INCLUDING STOCK) ==========
+    // ========== OPEN EDIT PRODUCT MODAL ==========
     window.openEditProductModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
@@ -1097,7 +1119,6 @@
         if (modal) modal.remove();
     };
     
-    // ========== SAVE PRODUCT EDIT (EDIT ALL DETAILS INCLUDING STOCK) ==========
     window.saveProductEdit = async (productId) => {
         const name = document.getElementById('editName')?.value;
         const animal = document.getElementById('editAnimal')?.value;
@@ -1240,7 +1261,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.7.0 (Open/Closed Day Management)\n\n✅ Select any date - shows if OPEN or CLOSED\n✅ Open days: Can add and delete sales\n✅ Closed days: View only\n✅ Auto-start day when selecting new date\n✅ Continue adding to open day until closed\n✅ Fixed total revenue calculation\n✅ Reset keeps inventory\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 8.0.0 (Deduct on Close)\n\n✅ Add sales → NO inventory deduction\n✅ Pending deductions shown before closing\n✅ Close day → ALL inventory deducted\n✅ Restock → ADDS to existing stock\n✅ Edit → SET stock to exact value\n✅ Reset → Keeps inventory\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // ========== RENDER FUNCTIONS ==========
@@ -1263,7 +1284,6 @@
         <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
     }
     
-    // ========== RENDER INVENTORY WITH BOTH RESTOCK AND EDIT ==========
     function renderInventory() {
         return `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>📅 Restock Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => {
             const isRecent = p.restockDate && new Date(p.restockDate) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -1302,7 +1322,6 @@
         </div>`;
     }
     
-    // ========== RENDER LOGS WITH TIME FILTER ==========
     function renderLogs() {
         let filteredLogs = [...activityLogs];
         const now = new Date();
@@ -1354,6 +1373,7 @@
                         if (l.action === 'RESTOCK') badgeColor = 'role-badge-super';
                         else if (l.action === 'SALE') badgeColor = 'role-badge-admin';
                         else if (l.action === 'NEW_PRODUCT') badgeColor = 'role-badge-super';
+                        else if (l.action === 'SALE_ADDED') badgeColor = 'role-badge-admin';
                         return `<tr><td style="padding:8px">${formatLocalTime(l.timestamp)}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole || 'Admin'}</td><td style="padding:8px"><span class="${badgeColor}">${l.action}</span></td><td style="padding:8px">${l.details}</td></tr>`;
                     }).join('')}
                 </tbody>
@@ -1365,28 +1385,24 @@
         return `<div class="table-container"><table class="data-table"><thead><tr><th>Full Name</th><th>Username</th><th>Password</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>${users.map(u => `<tr><td style="padding:8px">${u.fullName}</td><td style="padding:8px">${u.username}</td><td class="password-cell" style="padding:8px">${isSuperAdmin() ? (visiblePasswords[u.id] ? u.password : '••••••') : '••••••'} ${isSuperAdmin() ? `<i class="fas ${visiblePasswords[u.id] ? 'fa-eye-slash' : 'fa-eye'} eye-icon" onclick="togglePasswordVisibility(${u.id})"></i>` : ''}</td><td style="padding:8px"><span class="${u.role === 'super_admin' ? 'role-badge-super' : 'role-badge-admin'}">${u.role === 'super_admin' ? '👑 Super Admin' : '👤 Admin'}</span></td><td style="padding:8px">${u.isActive ? '✅ Active' : '❌ Inactive'}</td><td style="padding:8px">${u.lastLogin || 'Never'}</td><td style="padding:8px">${u.username !== 'superadmin' ? `<button class="btn-edit" onclick="openEditUserModal(${u.id})">Edit</button> <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>` : '<span class="role-badge-super">Protected</span>'}</td></tr>`).join('')}</tbody></div>`;
     }
     
-    // ========== RENDER SALES WITH OPEN/CLOSED STATUS ==========
+    // ========== RENDER SALES ==========
     function renderSales() {
         const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${roundCurrency(p.priceKg)}/kg ${p.restockDate ? '📅 ' + formatDate(p.restockDate) : ''}</option>`).join('');
         const date = selectedSalesDate;
         
-        // Check if this date is closed in dailyClosings
         const closingRecord = dailyClosings.find(c => c.date === date);
         const isClosedPermanently = closingRecord !== undefined;
         const hasSales = currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0;
+        const hasPending = currentDaySales.pendingDeductions && Object.keys(currentDaySales.pendingDeductions).length > 0;
         const statusText = isClosedPermanently ? '🔒 Closed' : '🟢 Open';
         
-        // ✅ FIXED: Calculate total revenue with proper rounding
         let totalRevenue = 0;
         if (hasSales) {
             for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
                 const productInfo = inventory.find(p => p.name === product);
                 const pricePerKg = productInfo?.priceKg || 0;
-                // ✅ Round each product's revenue to 2 decimal places
-                const productRevenue = Math.round((kg * pricePerKg) * 100) / 100;
-                totalRevenue += productRevenue;
+                totalRevenue += Math.round((kg * pricePerKg) * 100) / 100;
             }
-            // ✅ Round total to 2 decimal places
             totalRevenue = Math.round(totalRevenue * 100) / 100;
         }
         
@@ -1416,6 +1432,7 @@
                 <i class="fas fa-info-circle"></i> 
                 <strong>${selectedSalesDate} is OPEN.</strong><br>
                 ${hasSales ? `You have ${Object.keys(currentDaySales.salesByProduct).length} product(s) added. Continue adding or close the day when done.` : 'No sales yet. Select a product and add below.'}
+                ${hasPending ? ` ⏳ ${Object.keys(currentDaySales.pendingDeductions).length} pending deduction(s).` : ''}
             </div>
             `}
             
@@ -1444,8 +1461,41 @@
                 <button class="btn btn-success" onclick="updateDailySales()"><i class="fas fa-plus-circle"></i> Add Sale</button>
                 <button class="btn btn-warning" onclick="closeDay()"><i class="fas fa-lock"></i> Close Day</button>
             </div>
+            <div class="calc-note" style="margin-top:10px; padding:8px; background:#dbeafe; border-radius:8px;">
+                <i class="fas fa-info-circle"></i> <strong>Note:</strong> Inventory will be deducted only when you close the day.
+            </div>
             ` : ''}
         </div>
+        
+        ${hasPending && !isClosedPermanently ? `
+        <div class="card" style="background:#fef3c7; border-left:4px solid #f59e0b;">
+            <div class="card-header">
+                <h2><i class="fas fa-clock"></i> ⏳ Pending Deductions</h2>
+                <span class="pending-badge">Will deduct when day is closed</span>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead><tr><th>Product</th><th>Quantity (kg)</th><th>Current Stock</th><th>Status</th></tr></thead>
+                    <tbody>
+                        ${Object.entries(currentDaySales.pendingDeductions).map(([product, kg]) => {
+                            const productInfo = inventory.find(p => p.name === product);
+                            const currentStock = productInfo?.stockKg || 0;
+                            const willBeShort = currentStock < kg;
+                            return `<tr>
+                                <td style="padding:8px">${product}</td>
+                                <td style="padding:8px">${roundToTwo(kg)} kg</td>
+                                <td style="padding:8px">${roundToTwo(currentStock)} kg</td>
+                                <td style="padding:8px">${willBeShort ? '<span style="color:#ef4444;">⚠️ Insufficient Stock!</span>' : '<span style="color:#10b981;">✅ Available</span>'}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div class="calc-note" style="padding:10px; text-align:center; background:#fef3c7;">
+                <i class="fas fa-info-circle"></i> Stock will be deducted when you close this day.
+            </div>
+        </div>
+        ` : ''}
         
         ${hasSales ? `
         <div class="card">
@@ -1460,7 +1510,6 @@
                         ${Object.entries(currentDaySales.salesByProduct).map(([product, kg]) => {
                             const productInfo = inventory.find(p => p.name === product);
                             const pricePerKg = productInfo?.priceKg || 0;
-                            // ✅ Round each product's revenue
                             const productRevenue = Math.round((kg * pricePerKg) * 100) / 100;
                             return `<tr>
                                 <td style="padding:8px">${product}</td>
