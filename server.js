@@ -243,7 +243,6 @@ const server = http.createServer(async (req, res) => {
                 };
                 data.inventory.push(newItem);
                 
-                // Log the new product
                 data.activityLogs.push({
                     timestamp: new Date().toISOString(),
                     user: body.userName || 'System',
@@ -257,7 +256,7 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-        // ========== INVENTORY PUT (RESTOCK - ADDS TO EXISTING) ==========
+        // ========== INVENTORY PUT ==========
         if (pathname.startsWith('/api/inventory/')) {
             const id = parseInt(pathname.split('/')[3]);
             const itemIndex = data.inventory.findIndex(i => i.id === id);
@@ -268,25 +267,40 @@ const server = http.createServer(async (req, res) => {
                 
                 // Track old stock for logging
                 const oldStock = item.stockKg;
-                const stockToAdd = body.stockKg || 0;
+                const stockToAdd = body.stockToAdd || 0;
                 
                 // Update basic info
                 if (body.name) item.name = body.name;
                 if (body.animal) item.animal = body.animal;
                 
-                // ✅ ADD to existing stock instead of replacing
-                if (stockToAdd > 0) {
-                    item.stockKg = Math.round((item.stockKg + stockToAdd) * 100) / 100;
-                    
-                    // Log the restock
-                    data.activityLogs.push({
-                        timestamp: new Date().toISOString(),
-                        user: body.userName || 'System',
-                        action: 'RESTOCK',
-                        details: `Added ${stockToAdd}kg to ${item.name}. Old: ${oldStock}kg, New: ${item.stockKg}kg`
-                    });
+                // Check if this is a restock (ADD to existing) or edit (SET exact value)
+                if (body.isRestock) {
+                    // ✅ RESTOCK: ADD to existing stock
+                    if (stockToAdd > 0) {
+                        item.stockKg = Math.round((item.stockKg + stockToAdd) * 100) / 100;
+                        
+                        data.activityLogs.push({
+                            timestamp: new Date().toISOString(),
+                            user: body.userName || 'System',
+                            action: 'RESTOCK',
+                            details: `Added ${stockToAdd}kg to ${item.name}. Old: ${oldStock}kg, New: ${item.stockKg}kg`
+                        });
+                    }
+                } else {
+                    // ✅ EDIT: SET exact stock value
+                    if (body.stockKg !== undefined) {
+                        item.stockKg = Math.round(body.stockKg * 100) / 100;
+                        
+                        data.activityLogs.push({
+                            timestamp: new Date().toISOString(),
+                            user: body.userName || 'System',
+                            action: 'EDIT_STOCK',
+                            details: `Stock for ${item.name} changed from ${oldStock}kg to ${item.stockKg}kg`
+                        });
+                    }
                 }
                 
+                // Always update these
                 if (body.priceKg !== undefined) item.priceKg = body.priceKg;
                 if (body.costKg !== undefined) item.costKg = body.costKg;
                 if (body.lowStockAlert !== undefined) item.lowStockAlert = body.lowStockAlert;
@@ -296,7 +310,7 @@ const server = http.createServer(async (req, res) => {
                 sendJSON(res, { 
                     success: true, 
                     item: item,
-                    message: `Added ${stockToAdd}kg to ${item.name}. New total: ${item.stockKg}kg`
+                    message: `Product "${item.name}" updated successfully!`
                 });
                 return;
             }
@@ -330,7 +344,6 @@ const server = http.createServer(async (req, res) => {
                 
                 // Initialize day if different date
                 if (data.currentDaySales.date !== saleDate || data.currentDaySales.isClosed) {
-                    // Check if there's a closing record for this date
                     const closing = data.dailyClosings.find(c => c.date === saleDate);
                     if (closing) {
                         sendJSON(res, { error: 'This day is already closed' }, 400);
@@ -351,14 +364,12 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-                // Find product
                 const product = data.inventory.find(p => p.id == body.productId);
                 if (!product) {
                     sendJSON(res, { error: 'Product not found' }, 404);
                     return;
                 }
 
-                // Check stock
                 if (product.stockKg < body.kg) {
                     sendJSON(res, { 
                         error: `Not enough stock! Only ${product.stockKg.toFixed(2)} kg available for ${product.name}` 
@@ -366,21 +377,17 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-                // ✅ DEDUCT FROM INVENTORY
                 product.stockKg = Math.round((product.stockKg - body.kg) * 100) / 100;
                 
-                // Update sales
                 data.currentDaySales.totalKg = Math.round((data.currentDaySales.totalKg + body.kg) * 100) / 100;
                 data.currentDaySales.cashAmount = Math.round((data.currentDaySales.cashAmount + (body.cash || 0)) * 100) / 100;
                 data.currentDaySales.mpesaAmount = Math.round((data.currentDaySales.mpesaAmount + (body.mpesa || 0)) * 100) / 100;
                 
-                // Track sales by product
                 data.currentDaySales.salesByProduct = data.currentDaySales.salesByProduct || {};
                 const productName = body.productName || product.name;
                 data.currentDaySales.salesByProduct[productName] = 
                     Math.round(((data.currentDaySales.salesByProduct[productName] || 0) + body.kg) * 100) / 100;
 
-                // Log activity
                 data.activityLogs.push({
                     timestamp: new Date().toISOString(),
                     user: body.userName || 'System',
@@ -426,7 +433,6 @@ const server = http.createServer(async (req, res) => {
             const body = await parseBody(req);
             const date = body.date || new Date().toISOString().split('T')[0];
             
-            // Check if day is already closed
             const closing = data.dailyClosings.find(c => c.date === date);
             if (closing) {
                 sendJSON(res, { error: 'This day is already closed' }, 400);
@@ -504,13 +510,11 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            // ✅ RESTORE INVENTORY
             const product = data.inventory.find(p => p.name === productName);
             if (product) {
                 product.stockKg = Math.round((product.stockKg + kgToRemove) * 100) / 100;
             }
 
-            // Remove from sales
             if (data.currentDaySales.salesByProduct && data.currentDaySales.salesByProduct[productName]) {
                 const currentKg = data.currentDaySales.salesByProduct[productName];
                 const newKg = Math.round((currentKg - kgToRemove) * 100) / 100;
@@ -593,7 +597,6 @@ const server = http.createServer(async (req, res) => {
 
         // ========== RESET ALL ==========
         if (pathname === '/api/reset-all' && method === 'POST') {
-            // Reset inventory to default with restock dates
             data.inventory = DEFAULT_DATA.inventory.map(item => ({ ...item }));
             data.dailyClosings = [];
             data.currentDaySales = { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} };
@@ -647,9 +650,9 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('1. Login as Admin');
     console.log('2. Record each sale → Inventory auto-deducted');
     console.log('3. At end of day, click "Close Day"');
-    console.log('4. Next day, click "Start New Day"');
-    console.log('5. Add expenses when they occur');
-    console.log('6. Restock → ADDS to existing stock (not replace)');
+    console.log('4. Add expenses when they occur');
+    console.log('5. Restock → ADDS to existing stock');
+    console.log('6. Edit → SET stock to exact value');
     console.log('7. Track restock dates in inventory');
     console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');

@@ -968,7 +968,9 @@
         }
         
         const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
+            stockToAdd: stockToAdd,
             stockKg: stockToAdd,
+            isRestock: true,
             restockDate: restockDate,
             userName: currentUser?.fullName || 'System'
         });
@@ -983,7 +985,7 @@
         }
     };
     
-    // ========== OPEN EDIT PRODUCT MODAL (EDIT DETAILS ONLY) ==========
+    // ========== OPEN EDIT PRODUCT MODAL (EDIT ALL DETAILS INCLUDING STOCK) ==========
     window.openEditProductModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
@@ -1000,7 +1002,7 @@
                     <div class="alert-info" style="margin-bottom:15px; background:#fef3c7; color:#92400e; border-left:4px solid #f59e0b;">
                         <i class="fas fa-info-circle"></i> 
                         <strong>Current stock:</strong> ${roundToTwo(product.stockKg)} kg<br>
-                        Use <strong>"Restock"</strong> button to add more stock. This form is for editing details only.
+                        Use <strong>"Restock"</strong> to ADD stock. Use this form to SET stock to a specific value.
                     </div>
                     <div class="form-group">
                         <label>Product Name</label>
@@ -1014,6 +1016,11 @@
                             <option value="Chicken" ${product.animal === 'Chicken' ? 'selected' : ''}>Chicken</option>
                             <option value="Liver" ${product.animal === 'Liver' ? 'selected' : ''}>Liver</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label>📦 Stock Quantity (kg)</label>
+                        <input type="number" id="editStock" step="0.1" value="${product.stockKg}">
+                        <div class="calc-note">Set the exact stock amount. Use "Restock" to ADD to existing stock.</div>
                     </div>
                     <div class="form-group">
                         <label>Selling Price (KES per kg)</label>
@@ -1050,27 +1057,35 @@
         if (modal) modal.remove();
     };
     
-    // ========== SAVE PRODUCT EDIT (DETAILS ONLY - NO STOCK CHANGE) ==========
+    // ========== SAVE PRODUCT EDIT (EDIT ALL DETAILS INCLUDING STOCK) ==========
     window.saveProductEdit = async (productId) => {
         const name = document.getElementById('editName')?.value;
         const animal = document.getElementById('editAnimal')?.value;
+        const stockKg = parseFloat(document.getElementById('editStock')?.value);
         const priceKg = parseFloat(document.getElementById('editPrice')?.value);
         const costKg = parseFloat(document.getElementById('editCost')?.value);
         const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
         const restockDate = document.getElementById('editRestockDate')?.value || new Date().toISOString().split('T')[0];
         
-        if (!name || isNaN(priceKg)) {
-            alert('Please fill all required fields');
+        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
+            alert('Please fill all required fields (Name, Stock, Price)');
+            return;
+        }
+        
+        if (stockKg < 0) {
+            alert('Stock cannot be negative');
             return;
         }
         
         const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
             name, 
             animal, 
+            stockKg: roundToTwo(stockKg),
             priceKg: roundCurrency(priceKg), 
             costKg: roundCurrency(costKg), 
             lowStockAlert,
             restockDate: restockDate,
+            isRestock: false,
             userName: currentUser?.fullName || 'System'
         });
         
@@ -1078,7 +1093,7 @@
             closeEditProductModal();
             await loadAllData();
             renderApp();
-            alert('✅ Product details updated successfully!');
+            alert(`✅ Product updated successfully!\n\n${result.message || 'Changes saved!'}`);
         } else {
             alert('Update failed. Please try again.');
         }
@@ -1185,7 +1200,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.6.0 (Restock + Edit)\n\n✅ Restock → ADDS to existing stock\n✅ Edit → Change product details (price, name, etc.)\n✅ Track restock dates\n✅ Green badge = Recent restock (7 days)\n✅ Yellow badge = Older restock\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.6.0 (Restock + Edit)\n\n✅ Restock → ADDS to existing stock\n✅ Edit → SET stock to exact value\n✅ Track restock dates\n✅ Green badge = Recent restock (7 days)\n✅ Yellow badge = Older restock\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // ========== RENDER FUNCTIONS ==========
