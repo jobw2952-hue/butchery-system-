@@ -593,6 +593,7 @@ const server = http.createServer(async (req, res) => {
 
         // ========== RESET ALL ==========
         if (pathname === '/api/reset-all' && method === 'POST') {
+            // Reset inventory to default with restock dates
             data.inventory = DEFAULT_DATA.inventory.map(item => ({ ...item }));
             data.dailyClosings = [];
             data.currentDaySales = { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} };
