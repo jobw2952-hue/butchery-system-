@@ -595,16 +595,43 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // ========== RESET ALL ==========
+        // ========== RESET ALL (Keep Inventory) ==========
         if (pathname === '/api/reset-all' && method === 'POST') {
-            data.inventory = DEFAULT_DATA.inventory.map(item => ({ ...item }));
+            // ✅ KEEP inventory as-is - DO NOT reset to default
+            // Only reset sales, expenses, and activity logs
+            
+            // Reset daily closings (sales records)
             data.dailyClosings = [];
-            data.currentDaySales = { date: "", totalKg: 0, cashAmount: 0, mpesaAmount: 0, isClosed: false, salesByProduct: {} };
+            
+            // Reset current day sales
+            data.currentDaySales = { 
+                date: "", 
+                totalKg: 0, 
+                cashAmount: 0, 
+                mpesaAmount: 0, 
+                isClosed: false, 
+                salesByProduct: {} 
+            };
+            
+            // Reset expenses
             data.expenses = [];
+            
+            // Reset activity logs
             data.activityLogs = [];
-            data.nextId = { inventory: 6, expenses: 1, users: 3, closings: 1 };
+            
+            // Reset nextId counters (but keep inventory counter)
+            data.nextId = { 
+                inventory: data.nextId?.inventory || 6,  // ✅ KEEP inventory counter
+                expenses: 1, 
+                users: 3, 
+                closings: 1 
+            };
+            
             saveData(data);
-            sendJSON(res, { success: true });
+            sendJSON(res, { 
+                success: true, 
+                message: 'Sales, expenses, and logs reset. Inventory preserved!' 
+            });
             return;
         }
 
@@ -653,7 +680,7 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('4. Add expenses when they occur');
     console.log('5. Restock → ADDS to existing stock');
     console.log('6. Edit → SET stock to exact value');
-    console.log('7. Track restock dates in inventory');
+    console.log('7. Reset All Data → KEEPS inventory, resets sales/expenses');
     console.log('='.repeat(50));
     console.log('Press Ctrl+C to stop');
     console.log('='.repeat(50));
