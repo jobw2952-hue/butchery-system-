@@ -52,8 +52,8 @@
         .btn-danger:hover { background: #dc2626; }
         .btn-delete { background: #ef4444; padding: 6px 12px; font-size: 0.7rem; border-radius: 6px; color: white; cursor: pointer; border: none; }
         .btn-delete:hover { background: #dc2626; }
-        .btn-edit { background: #3b82f6; padding: 6px 12px; font-size: 0.7rem; border-radius: 6px; color: white; cursor: pointer; border: none; }
-        .btn-edit:hover { background: #2563eb; }
+        .btn-edit { background: #10b981; padding: 6px 12px; font-size: 0.7rem; border-radius: 6px; color: white; cursor: pointer; border: none; }
+        .btn-edit:hover { background: #059669; }
         .btn-export { background: #10b981; padding: 8px 16px; font-size: 0.75rem; border-radius: 8px; color: white; cursor: pointer; border: none; }
         .btn-export:hover { background: #059669; }
         .btn-time-filter { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 12px; border-radius: 6px; color: #475569; cursor: pointer; font-size: 0.75rem; transition: all 0.2s; }
@@ -111,16 +111,17 @@
         .time-filter-bar label { margin: 0; font-size: 0.7rem; text-transform: uppercase; color: #64748b; }
         .restock-badge { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
         .restock-badge.old { background: #fef3c7; color: #92400e; }
+        .restock-badge.recent { background: #d1fae5; color: #065f46; }
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .sales-panel { grid-template-columns: 1fr; } .progress-section { grid-template-columns: 1fr; } .report-selector { flex-direction: column; align-items: stretch; } .date-range { justify-content: center; } }
         @media (max-width: 768px) { .dashboard-layout { flex-direction: column; } .sidebar { width: 100%; position: relative; } }
     </style>
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.4.0 📦 Restock Date</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.5.0 📦 Restock + Add to Stock</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH RESTOCK DATE ==========
+    // ========== BISMILAH BUTCHERY PRO - WITH RESTOCK DATE & ADD TO STOCK ==========
     
     function roundToTwo(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
@@ -501,7 +502,8 @@
             kg: roundToTwo(kg), 
             cash: roundCurrency(cash || 0), 
             mpesa: roundCurrency(mpesa || 0),
-            date: saleDate
+            date: saleDate,
+            userName: currentUser?.fullName || 'System'
         });
         
         if (result) {
@@ -533,7 +535,10 @@
         }
         
         if (confirm(`Close ${today}?\nTotal KG: ${roundToTwo(currentDaySales.totalKg)} kg\nCash: KES ${roundCurrency(currentDaySales.cashAmount).toLocaleString()}\nM-Pesa: KES ${roundCurrency(currentDaySales.mpesaAmount).toLocaleString()}\nTotal Revenue: KES ${roundCurrency(total).toLocaleString()}${salesSummary}`)) {
-            const result = await apiCall('/api/close-day', 'POST', { date: today });
+            const result = await apiCall('/api/close-day', 'POST', { 
+                date: today,
+                closedBy: currentUser?.fullName || 'System'
+            });
             if (result) {
                 await loadSalesForDate(today);
                 await loadAllData();
@@ -557,7 +562,8 @@
             category, 
             amount: roundCurrency(amount), 
             description: description || '',
-            date: expenseDate
+            date: expenseDate,
+            userName: currentUser?.fullName || 'System'
         });
         
         if (result) {
@@ -781,7 +787,7 @@
         }
     };
     
-    // ========== PRODUCT FUNCTIONS WITH RESTOCK DATE ==========
+    // ========== PRODUCT FUNCTIONS WITH RESTOCK DATE & ADD TO STOCK ==========
     window.openAddProductModal = () => {
         if (!isSuperAdmin()) return alert('Only Super Admin can add products');
         
@@ -828,7 +834,7 @@
                         <input type="date" id="addRestockDate" value="${today}">
                     </div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
-                        <button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;">Add Product</button>
+                        <button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;"><i class="fas fa-plus"></i> Add Product</button>
                         <button class="btn-delete" onclick="closeAddProductModal()" style="flex:1;">Cancel</button>
                     </div>
                 </div>
@@ -867,7 +873,8 @@
             priceKg: roundCurrency(priceKg), 
             costKg: roundCurrency(costKg), 
             lowStockAlert,
-            restockDate: restockDate
+            restockDate: restockDate,
+            userName: currentUser?.fullName || 'System'
         });
         
         if (result) {
@@ -880,16 +887,33 @@
         }
     };
     
+    // ========== OPEN RESTOCK MODAL (ADDS TO EXISTING STOCK) ==========
     window.openEditProductModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
+        
+        const today = new Date().toISOString().split('T')[0];
         
         const modalHtml = `
             <div class="modal" id="editProductModal">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h3><i class="fas fa-edit"></i> Edit Product: ${product.name}</h3>
+                        <h3><i class="fas fa-boxes"></i> Restock: ${product.name}</h3>
                         <button class="close-modal" onclick="closeEditProductModal()">&times;</button>
+                    </div>
+                    <div class="alert-info" style="margin-bottom:15px; background:#dbeafe; color:#1e40af; border-left:4px solid #3b82f6;">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Current stock:</strong> ${roundToTwo(product.stockKg)} kg<br>
+                        Enter the amount of <strong>NEW stock</strong> to ADD to existing stock.
+                    </div>
+                    <div class="form-group" style="background:#f0fdf4; padding:12px; border-radius:10px; border:1px solid #d1fae5;">
+                        <label style="color:#065f46;">📦 Add Stock (kg) *</label>
+                        <input type="number" id="editStock" step="0.1" placeholder="Enter kg to add" value="" style="border-color:#10b981;">
+                        <div class="calc-note" style="color:#065f46;">
+                            <i class="fas fa-calculator"></i> 
+                            This will be <strong>ADDED</strong> to current stock of ${roundToTwo(product.stockKg)} kg 
+                            → New total will be <strong id="newTotalPreview">${roundToTwo(product.stockKg)} kg</strong>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Product Name</label>
@@ -905,10 +929,6 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Stock Quantity (kg)</label>
-                        <input type="number" id="editStock" step="0.1" value="${product.stockKg}">
-                    </div>
-                    <div class="form-group">
                         <label>Selling Price (KES per kg)</label>
                         <input type="number" id="editPrice" step="10" value="${product.priceKg}">
                     </div>
@@ -922,10 +942,12 @@
                     </div>
                     <div class="form-group">
                         <label>📅 Restock Date</label>
-                        <input type="date" id="editRestockDate" value="${product.restockDate || ''}">
+                        <input type="date" id="editRestockDate" value="${product.restockDate || today}">
                     </div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
-                        <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
+                        <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">
+                            <i class="fas fa-plus-circle"></i> Add Stock & Save
+                        </button>
                         <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
                     </div>
                 </div>
@@ -934,6 +956,20 @@
         const existing = document.getElementById('editProductModal');
         if (existing) existing.remove();
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Add live preview for new total
+        const stockInput = document.getElementById('editStock');
+        if (stockInput) {
+            stockInput.addEventListener('input', function() {
+                const currentStock = ${product.stockKg};
+                const added = parseFloat(this.value) || 0;
+                const newTotal = currentStock + added;
+                const preview = document.getElementById('newTotalPreview');
+                if (preview) {
+                    preview.textContent = roundToTwo(newTotal) + ' kg';
+                }
+            });
+        }
     };
     
     window.closeEditProductModal = () => {
@@ -941,35 +977,42 @@
         if (modal) modal.remove();
     };
     
+    // ========== SAVE RESTOCK (ADDS TO EXISTING STOCK) ==========
     window.saveProductEdit = async (productId) => {
         const name = document.getElementById('editName')?.value;
         const animal = document.getElementById('editAnimal')?.value;
-        const stockKg = parseFloat(document.getElementById('editStock')?.value);
+        const stockToAdd = parseFloat(document.getElementById('editStock')?.value) || 0;
         const priceKg = parseFloat(document.getElementById('editPrice')?.value);
         const costKg = parseFloat(document.getElementById('editCost')?.value);
         const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
         const restockDate = document.getElementById('editRestockDate')?.value || new Date().toISOString().split('T')[0];
         
-        if (!name || isNaN(stockKg) || isNaN(priceKg)) {
+        if (!name || isNaN(priceKg)) {
             alert('Please fill all required fields');
+            return;
+        }
+        
+        if (stockToAdd <= 0) {
+            alert('Please enter the amount of stock to ADD (must be greater than 0)');
             return;
         }
         
         const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
             name, 
             animal, 
-            stockKg: roundToTwo(stockKg), 
+            stockKg: stockToAdd,  // This will be ADDED to existing stock
             priceKg: roundCurrency(priceKg), 
             costKg: roundCurrency(costKg), 
             lowStockAlert,
-            restockDate: restockDate
+            restockDate: restockDate,
+            userName: currentUser?.fullName || 'System'
         });
         
         if (result) {
             closeEditProductModal();
             await loadAllData();
             renderApp();
-            alert('✅ Product updated successfully!');
+            alert(`✅ Restock successful!\n\n${result.message || 'Stock updated successfully!'}`);
         } else {
             alert('Update failed. Please try again.');
         }
@@ -1076,7 +1119,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.4.0 (Restock Date)\n\n✅ Added Restock Date to inventory\n✅ Track when stock arrived\n✅ Filter inventory by restock date\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.5.0 (Restock + Add to Stock)\n\n✅ Restock adds to existing stock (not replace)\n✅ Track restock dates\n✅ Green badge = Recent restock (7 days)\n✅ Yellow badge = Older restock\n✅ Activity logs track restocks\n✅ Time filter for logs\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // ========== RENDER FUNCTIONS ==========
@@ -1099,10 +1142,12 @@
         <div class="card"><div class="card-header"><h2><i class="fas fa-chart-line"></i> Stock Status</h2></div><div class="progress-section">${inventory.map(item => { const percent = Math.min(100, (item.stockKg / (item.lowStockAlert * 3)) * 100); const fillClass = percent < 30 ? 'low' : ''; return `<div class="stock-item"><div class="stock-info"><span class="stock-name">${item.name}</span><span>${roundToTwo(item.stockKg)} kg / ${item.lowStockAlert} kg alert</span></div><div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${percent}%"></div></div></div>`; }).join('')}</div></div>`;
     }
     
+    // ========== RENDER INVENTORY WITH RESTOCK DATE ==========
     function renderInventory() {
         return `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>📅 Restock Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => {
             const isRecent = p.restockDate && new Date(p.restockDate) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            return `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${roundToTwo(p.stockKg)}</td><td style="padding:8px">KES ${roundCurrency(p.priceKg)}</td><td style="padding:8px">KES ${roundCurrency(p.costKg)}</td><td style="padding:8px"><span class="${isRecent ? 'restock-badge' : 'restock-badge old'}">${formatDate(p.restockDate) || 'N/A'}</span></td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`;
+            const badgeClass = isRecent ? 'restock-badge recent' : 'restock-badge old';
+            return `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px"><strong>${roundToTwo(p.stockKg)}</strong></td><td style="padding:8px">KES ${roundCurrency(p.priceKg)}</td><td style="padding:8px">KES ${roundCurrency(p.costKg)}</td><td style="padding:8px"><span class="${badgeClass}">${formatDate(p.restockDate) || 'N/A'}</span></td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})"><i class="fas fa-plus-circle"></i> Restock</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`;
         }).join('')}</tbody></div>`;
     }
     
@@ -1132,6 +1177,7 @@
         </div>`;
     }
     
+    // ========== RENDER LOGS WITH TIME FILTER ==========
     function renderLogs() {
         let filteredLogs = [...activityLogs];
         const now = new Date();
@@ -1178,7 +1224,14 @@
                 <thead><tr><th>Time (Kenya)</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
                 <tbody>
                     ${filteredLogs.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:40px;">No activity logs found for this time period</td>' : 
-                    filteredLogs.slice(0, 100).map(l => `<tr><td style="padding:8px">${formatLocalTime(l.timestamp)}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole || 'Admin'}</td><td style="padding:8px"><span class="role-badge">${l.action}</span></td><td style="padding:8px">${l.details}</td></tr>`).join('')}
+                    filteredLogs.slice(0, 100).map(l => {
+                        let actionBadge = l.action;
+                        let badgeColor = 'role-badge';
+                        if (l.action === 'RESTOCK') badgeColor = 'role-badge-super';
+                        else if (l.action === 'SALE') badgeColor = 'role-badge-admin';
+                        else if (l.action === 'NEW_PRODUCT') badgeColor = 'role-badge-super';
+                        return `<tr><td style="padding:8px">${formatLocalTime(l.timestamp)}</td><td style="padding:8px">${l.user}</td><td style="padding:8px">${l.userRole || 'Admin'}</td><td style="padding:8px"><span class="${badgeColor}">${l.action}</span></td><td style="padding:8px">${l.details}</td></tr>`;
+                    }).join('')}
                 </tbody>
             </table>
         </div>`;
@@ -1411,7 +1464,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;">Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;"><i class="fas fa-trash-alt"></i> Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
     }
     
     // Initialize
