@@ -109,30 +109,29 @@
         .date-selector input { width: auto; min-width: 160px; }
         .time-filter-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 10px; }
         .time-filter-bar label { margin: 0; font-size: 0.7rem; text-transform: uppercase; color: #64748b; }
+        .restock-badge { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+        .restock-badge.old { background: #fef3c7; color: #92400e; }
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .sales-panel { grid-template-columns: 1fr; } .progress-section { grid-template-columns: 1fr; } .report-selector { flex-direction: column; align-items: stretch; } .date-range { justify-content: center; } }
         @media (max-width: 768px) { .dashboard-layout { flex-direction: column; } .sidebar { width: 100%; position: relative; } }
     </style>
 </head>
 <body>
 <div id="app"><div class="loading"><div class="spinner"></div><p>Connecting to server...</p></div></div>
-<div class="version-badge" onclick="showVersionInfo()">v7.3.0 🎨 UI Improved</div>
+<div class="version-badge" onclick="showVersionInfo()">v7.4.0 📦 Restock Date</div>
 
 <script>
-    // ========== BISMILAH BUTCHERY PRO - WITH UI IMPROVEMENTS ==========
+    // ========== BISMILAH BUTCHERY PRO - WITH RESTOCK DATE ==========
     
-    // ✅ FIXED: Round to 3 decimal places to avoid floating point issues
     function roundToTwo(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
         return Number(num.toFixed(3));
     }
     
-    // ✅ FIXED: Round to 2 decimal places for currency
     function roundCurrency(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
         return Number(num.toFixed(2));
     }
     
-    // ✅ NEW: Convert UTC timestamp to Kenya local time
     function formatLocalTime(utcTimestamp) {
         if (!utcTimestamp) return '-';
         try {
@@ -151,6 +150,20 @@
         }
     }
     
+    function formatDate(dateStr) {
+        if (!dateStr) return '-';
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-KE', {
+                year: 'numeric',
+                month: 'short',
+                day: '2-digit'
+            });
+        } catch (e) {
+            return dateStr;
+        }
+    }
+    
     const API_URL = '';
     let token = localStorage.getItem('token');
     let currentUser = null;
@@ -164,9 +177,8 @@
     let revenueChart = null;
     let profitChart = null;
     let selectedSalesDate = new Date().toISOString().split('T')[0];
-    let timeFilter = 'all'; // '1h', '2h', '6h', '12h', '24h', 'all'
+    let timeFilter = 'all';
     
-    // Data stores
     let users = [];
     let inventory = [];
     let dailyClosings = [];
@@ -217,7 +229,6 @@
         activityLogs = logsData || [];
     }
     
-    // Load sales for a specific date
     async function loadSalesForDate(date) {
         if (!token) return;
         
@@ -269,24 +280,20 @@
     
     function setPage(page) { currentPage = page; renderApp(); }
     
-    // Time filter for logs
     window.setTimeFilter = (filter) => {
         timeFilter = filter;
         renderApp();
     };
     
-    // Change sales date - auto starts day
     window.changeSalesDate = async () => {
         const datePicker = document.getElementById('salesDatePicker');
         if (datePicker) {
             selectedSalesDate = datePicker.value;
-            // Auto-start the day
             await apiCall('/api/new-day', 'POST', { date: selectedSalesDate });
             await loadSalesForDate(selectedSalesDate);
         }
     };
     
-    // Auto calculate KG
     window.autoCalculateKg = () => {
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
@@ -314,7 +321,6 @@
         autoCalculateKg();
     };
     
-    // Delete sale entry
     window.deleteSaleEntry = async (productName, kg) => {
         if (!confirm(`Delete sale: ${kg}kg of ${productName}? This will restore stock.`)) {
             return;
@@ -336,7 +342,6 @@
         }
     };
     
-    // Export to Excel
     window.exportToExcel = () => {
         const filtered = getFilteredClosings();
         if (filtered.length === 0) {
@@ -360,7 +365,6 @@
         alert('✅ Report exported to Excel!');
     };
     
-    // Export to PDF
     window.exportToPDF = () => {
         const filtered = getFilteredClosings();
         if (filtered.length === 0) {
@@ -466,7 +470,7 @@
         renderApp();
     };
     
-    // Sales functions with date support
+    // Sales functions
     window.updateDailySales = async () => {
         const productSelect = document.getElementById('saleProduct');
         const selectedProductId = productSelect?.value;
@@ -539,7 +543,7 @@
         }
     };
     
-    // Expense with date picker
+    // Expense functions
     window.addExpenseWithDate = async () => {
         const category = document.getElementById('expCategory')?.value;
         const amount = parseFloat(document.getElementById('expAmount')?.value);
@@ -640,7 +644,7 @@
         if (modal) modal.remove();
     };
     
-    // User functions
+    // ========== USER FUNCTIONS ==========
     window.showAddUserModal = () => {
         if (!isSuperAdmin()) {
             alert('Only Super Admin can add users');
@@ -777,9 +781,11 @@
         }
     };
     
-    // Product functions
+    // ========== PRODUCT FUNCTIONS WITH RESTOCK DATE ==========
     window.openAddProductModal = () => {
         if (!isSuperAdmin()) return alert('Only Super Admin can add products');
+        
+        const today = new Date().toISOString().split('T')[0];
         
         const modalHtml = `
             <div class="modal" id="addProductModal">
@@ -817,6 +823,10 @@
                         <label>Low Stock Alert (kg)</label>
                         <input type="number" id="addAlert" step="1" value="10" placeholder="Alert when stock below">
                     </div>
+                    <div class="form-group">
+                        <label>📅 Restock Date</label>
+                        <input type="date" id="addRestockDate" value="${today}">
+                    </div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
                         <button class="btn btn-success" onclick="submitAddProduct()" style="flex:1;">Add Product</button>
                         <button class="btn-delete" onclick="closeAddProductModal()" style="flex:1;">Cancel</button>
@@ -841,6 +851,7 @@
         const priceKg = parseFloat(document.getElementById('addPrice')?.value);
         let costKg = parseFloat(document.getElementById('addCost')?.value);
         const lowStockAlert = parseFloat(document.getElementById('addAlert')?.value) || 10;
+        const restockDate = document.getElementById('addRestockDate')?.value || new Date().toISOString().split('T')[0];
         
         if (!name || isNaN(stockKg) || isNaN(priceKg)) {
             alert('Please fill all required fields (Name, Stock, Price)');
@@ -850,7 +861,13 @@
         if (isNaN(costKg)) costKg = priceKg * 0.7;
         
         const result = await apiCall('/api/inventory', 'POST', {
-            name, animal, stockKg: roundToTwo(stockKg), priceKg: roundCurrency(priceKg), costKg: roundCurrency(costKg), lowStockAlert
+            name, 
+            animal, 
+            stockKg: roundToTwo(stockKg), 
+            priceKg: roundCurrency(priceKg), 
+            costKg: roundCurrency(costKg), 
+            lowStockAlert,
+            restockDate: restockDate
         });
         
         if (result) {
@@ -903,6 +920,10 @@
                         <label>Low Stock Alert (kg)</label>
                         <input type="number" id="editAlert" step="1" value="${product.lowStockAlert}">
                     </div>
+                    <div class="form-group">
+                        <label>📅 Restock Date</label>
+                        <input type="date" id="editRestockDate" value="${product.restockDate || ''}">
+                    </div>
                     <div style="display:flex; gap:12px; margin-top:20px;">
                         <button class="btn btn-success" onclick="saveProductEdit(${product.id})" style="flex:1;">Save Changes</button>
                         <button class="btn-delete" onclick="closeEditProductModal()" style="flex:1;">Cancel</button>
@@ -927,6 +948,7 @@
         const priceKg = parseFloat(document.getElementById('editPrice')?.value);
         const costKg = parseFloat(document.getElementById('editCost')?.value);
         const lowStockAlert = parseFloat(document.getElementById('editAlert')?.value);
+        const restockDate = document.getElementById('editRestockDate')?.value || new Date().toISOString().split('T')[0];
         
         if (!name || isNaN(stockKg) || isNaN(priceKg)) {
             alert('Please fill all required fields');
@@ -934,7 +956,13 @@
         }
         
         const result = await apiCall(`/api/inventory/${productId}`, 'PUT', {
-            name, animal, stockKg: roundToTwo(stockKg), priceKg: roundCurrency(priceKg), costKg: roundCurrency(costKg), lowStockAlert
+            name, 
+            animal, 
+            stockKg: roundToTwo(stockKg), 
+            priceKg: roundCurrency(priceKg), 
+            costKg: roundCurrency(costKg), 
+            lowStockAlert,
+            restockDate: restockDate
         });
         
         if (result) {
@@ -1048,10 +1076,10 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.3.0 (UI Improved)\n\n✅ Removed "Start New Day" button - date picker auto-starts\n✅ Add Sale button - Blue\n✅ Close Day button - Light grey\n✅ Activity Logs - Time filter arrows\n✅ Time displayed in Kenya local time\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.4.0 (Restock Date)\n\n✅ Added Restock Date to inventory\n✅ Track when stock arrived\n✅ Filter inventory by restock date\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
-    // RENDER FUNCTIONS
+    // ========== RENDER FUNCTIONS ==========
     function renderDashboard() {
         const totalInventoryValue = inventory.reduce((sum, i) => sum + (i.stockKg * i.costKg), 0);
         const todayTotal = (currentDaySales.cashAmount || 0) + (currentDaySales.mpesaAmount || 0);
@@ -1072,7 +1100,10 @@
     }
     
     function renderInventory() {
-        return `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${roundToTwo(p.stockKg)}</td><td style="padding:8px">KES ${roundCurrency(p.priceKg)}</td><td style="padding:8px">KES ${roundCurrency(p.costKg)}</td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`).join('')}</tbody></div>`;
+        return `<div class="table-container"><table class="data-table"><thead><tr><th>Name</th><th>Animal</th><th>Stock (kg)</th><th>Price/kg</th><th>Cost/kg</th><th>📅 Restock Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>${inventory.map(p => {
+            const isRecent = p.restockDate && new Date(p.restockDate) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            return `<tr><td style="padding:8px">${p.name}</td><td style="padding:8px">${p.animal}</td><td style="padding:8px">${roundToTwo(p.stockKg)}</td><td style="padding:8px">KES ${roundCurrency(p.priceKg)}</td><td style="padding:8px">KES ${roundCurrency(p.costKg)}</td><td style="padding:8px"><span class="${isRecent ? 'restock-badge' : 'restock-badge old'}">${formatDate(p.restockDate) || 'N/A'}</span></td><td style="padding:8px">${p.stockKg <= p.lowStockAlert ? '<span style="color:#ef4444;">⚠️ Low Stock</span>' : '<span style="color:#10b981;">✓ In Stock</span>'}</td><td style="padding:8px"><button class="btn-edit" onclick="openEditProductModal(${p.id})">Edit</button> ${isSuperAdmin() ? `<button class="btn-delete" onclick="deleteInventoryProduct(${p.id})">Delete</button>` : ''}</td></tr>`;
+        }).join('')}</tbody></div>`;
     }
     
     function renderExpenses() {
@@ -1101,9 +1132,7 @@
         </div>`;
     }
     
-    // ✅ UPDATED: renderLogs with Kenya local time and time filter arrows
     function renderLogs() {
-        // Filter logs by time
         let filteredLogs = [...activityLogs];
         const now = new Date();
         
@@ -1123,7 +1152,6 @@
             const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
             filteredLogs = filteredLogs.filter(l => new Date(l.timestamp) >= twentyFourHoursAgo);
         }
-        // 'all' shows everything
         
         const timeFilterButtons = [
             { id: 'all', label: 'All' },
@@ -1161,7 +1189,7 @@
     }
     
     function renderSales() {
-        const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${roundCurrency(p.priceKg)}/kg</option>`).join('');
+        const productOptions = inventory.map(p => `<option value="${p.id}" data-price="${p.priceKg}">${p.name} (${roundToTwo(p.stockKg)} kg available) - KES ${roundCurrency(p.priceKg)}/kg ${p.restockDate ? '📅 ' + formatDate(p.restockDate) : ''}</option>`).join('');
         const isClosed = currentDaySales.isClosed;
         const statusText = isClosed ? '🔒 Closed' : '🟢 Open';
         
