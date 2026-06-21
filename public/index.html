@@ -131,12 +131,12 @@
     
     function roundToTwo(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
-        return Number(num.toFixed(3));
+        return Math.round(num * 1000) / 1000;
     }
     
     function roundCurrency(num) {
         if (isNaN(num) || num === null || num === undefined) return 0;
-        return Number(num.toFixed(2));
+        return Math.round(num * 100) / 100;
     }
     
     function formatLocalTime(utcTimestamp) {
@@ -305,7 +305,6 @@
                 // Day is closed - load the closed sales data
                 await loadSalesForDate(selectedSalesDate);
                 renderApp();
-                // Show notification but don't alert every time (user will see the status)
             } else {
                 // Day is open - start or continue the day
                 await apiCall('/api/new-day', 'POST', { date: selectedSalesDate });
@@ -641,21 +640,23 @@
             return;
         }
         
+        const productCount = inventory.length;
+        
         const modalHtml = `
             <div class="reset-confirm-modal" id="resetConfirmModal">
                 <div class="reset-confirm-box">
                     <i class="fas fa-exclamation-triangle" style="font-size:48px; color:#ef4444; margin-bottom:20px;"></i>
-                    <h3 style="margin-bottom:15px;">⚠️ WARNING: RESET ALL DATA</h3>
-                    <p style="margin-bottom:20px; color:#64748b;">This will permanently delete:</p>
+                    <h3 style="margin-bottom:15px;">⚠️ WARNING: RESET SALES & EXPENSES</h3>
+                    <p style="margin-bottom:20px; color:#64748b;">This will reset:</p>
                     <ul style="text-align:left; margin-bottom:20px; color:#64748b;">
                         <li>📊 All sales records</li>
                         <li>📅 All closed days</li>
                         <li>💸 All expenses</li>
                         <li>📋 All activity logs</li>
-                        <li>📦 Set all inventory stock to 0 kg</li>
+                        <li style="color:#10b981;"><strong>✅ ${productCount} product(s) will be KEPT</strong></li>
                     </ul>
                     <p style="color:#ef4444; margin-bottom:20px;"><strong>This action CANNOT be undone!</strong></p>
-                    <button onclick="confirmReset()" style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; margin-right:10px;">Yes, Reset Everything</button>
+                    <button onclick="confirmReset()" style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; margin-right:10px;">Yes, Reset Sales</button>
                     <button onclick="closeResetModal()" style="background:#94a3b8; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer;">Cancel</button>
                 </div>
             </div>
@@ -677,7 +678,7 @@
             if (response.ok) {
                 await loadAllData();
                 renderApp();
-                alert('✅ All data has been reset to zero!');
+                alert('✅ Sales, expenses, and logs have been reset! Inventory preserved.');
             } else {
                 alert('Reset failed. Please try again.');
             }
@@ -1239,7 +1240,7 @@
     };
     
     window.showVersionInfo = () => {
-        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.7.0 (Open/Closed Day Management)\n\n✅ Select any date - shows if OPEN or CLOSED\n✅ Open days: Can add and delete sales\n✅ Closed days: View only\n✅ Auto-start day when selecting new date\n✅ Continue adding to open day until closed\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
+        alert(`📦 Bismillah Butchery Pro\n\nVersion: 7.7.0 (Open/Closed Day Management)\n\n✅ Select any date - shows if OPEN or CLOSED\n✅ Open days: Can add and delete sales\n✅ Closed days: View only\n✅ Auto-start day when selecting new date\n✅ Continue adding to open day until closed\n✅ Fixed total revenue calculation\n✅ Reset keeps inventory\n\nData Status: ${dailyClosings.length} closed days, ${expenses.length} expenses, ${inventory.length} products`);
     };
     
     // ========== RENDER FUNCTIONS ==========
@@ -1375,13 +1376,18 @@
         const hasSales = currentDaySales.salesByProduct && Object.keys(currentDaySales.salesByProduct).length > 0;
         const statusText = isClosedPermanently ? '🔒 Closed' : '🟢 Open';
         
-        // Calculate total revenue from sales
+        // ✅ FIXED: Calculate total revenue with proper rounding
         let totalRevenue = 0;
         if (hasSales) {
             for (const [product, kg] of Object.entries(currentDaySales.salesByProduct)) {
                 const productInfo = inventory.find(p => p.name === product);
-                totalRevenue += kg * (productInfo?.priceKg || 0);
+                const pricePerKg = productInfo?.priceKg || 0;
+                // ✅ Round each product's revenue to 2 decimal places
+                const productRevenue = Math.round((kg * pricePerKg) * 100) / 100;
+                totalRevenue += productRevenue;
             }
+            // ✅ Round total to 2 decimal places
+            totalRevenue = Math.round(totalRevenue * 100) / 100;
         }
         
         return `<div class="sales-panel">
@@ -1454,12 +1460,13 @@
                         ${Object.entries(currentDaySales.salesByProduct).map(([product, kg]) => {
                             const productInfo = inventory.find(p => p.name === product);
                             const pricePerKg = productInfo?.priceKg || 0;
-                            const revenue = kg * pricePerKg;
+                            // ✅ Round each product's revenue
+                            const productRevenue = Math.round((kg * pricePerKg) * 100) / 100;
                             return `<tr>
                                 <td style="padding:8px">${product}</td>
                                 <td style="padding:8px">${roundToTwo(kg)} kg</td>
                                 <td style="padding:8px">KES ${roundCurrency(pricePerKg)}</td>
-                                <td style="padding:8px">KES ${roundCurrency(revenue).toLocaleString()}</td>
+                                <td style="padding:8px">KES ${roundCurrency(productRevenue).toLocaleString()}</td>
                                 ${!isClosedPermanently ? `<td style="padding:8px"><button class="btn-delete" onclick="deleteSaleEntry('${product.replace(/'/g, "\\'")}', ${kg})">Delete</button></td>` : ''}
                             </tr>`;
                         }).join('')}
@@ -1636,7 +1643,7 @@
         if (canManageUsers()) navItems.push({ id: 'users', icon: 'fa-users', label: 'Users' });
         if (canViewLogs()) navItems.push({ id: 'logs', icon: 'fa-history', label: 'Activity Logs' });
         
-        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;"><i class="fas fa-trash-alt"></i> Reset All Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
+        app.innerHTML = `<div class="app-container"><div class="dashboard-layout"><div class="sidebar"><div class="logo-area"><h1><i class="fas fa-drumstick-bite"></i> Bismillah</h1><p>Premium Fresh Meat</p></div>${navItems.map(item => `<div class="nav-item ${currentPage === item.id ? 'active' : ''}" onclick="setPage('${item.id}')"><i class="fas ${item.icon}"></i> ${item.label}</div>`).join('')}${isSuperAdmin() ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;"><div class="nav-item" onclick="resetAllData()" style="color:#ef4444;"><i class="fas fa-trash-alt"></i> Reset Sales Data</div></div>` : ''}</div><div class="main-content"><div class="top-bar"><div><h3>${currentUser.fullName} ${isSuperAdmin() ? '<i class="fas fa-crown" style="color:#f59e0b;"></i>' : ''}</h3><span class="role-badge">${isSuperAdmin() ? '🌟 Super Admin' : '👤 Admin'}</span></div><div><button class="btn-edit" onclick="openEditSelfModal()" style="margin-right:10px;"><i class="fas fa-user-edit"></i> Edit Profile</button><button class="btn-delete" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div></div><div class="card"><div class="card-header"><h2>${navItems.find(i=>i.id===currentPage)?.label || 'Dashboard'}</h2>${currentPage === 'inventory' && isSuperAdmin() ? `<button class="btn" onclick="openAddProductModal()"><i class="fas fa-plus"></i> Add Product</button>` : ''}${currentPage === 'users' && isSuperAdmin() ? `<button class="btn btn-success" onclick="showAddUserModal()" style="margin-left:10px;"><i class="fas fa-user-plus"></i> Add User</button>` : ''}</div><div>${currentPage === 'dashboard' ? renderDashboard() : currentPage === 'sales' ? renderSales() : currentPage === 'inventory' ? renderInventory() : currentPage === 'expenses' ? renderExpenses() : currentPage === 'reports' ? renderReports() : currentPage === 'users' ? renderUsers() : renderLogs()}</div></div></div></div></div>`;
     }
     
     // Initialize
