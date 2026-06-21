@@ -887,12 +887,13 @@
         }
     };
     
-    // ========== OPEN RESTOCK MODAL (ADDS TO EXISTING STOCK) ==========
+    // ========== OPEN RESTOCK MODAL (ADDS TO EXISTING STOCK) - FIXED ==========
     window.openEditProductModal = async (productId) => {
         const product = inventory.find(p => p.id === productId);
         if (!product) return;
         
         const today = new Date().toISOString().split('T')[0];
+        const currentStock = product.stockKg || 0;  // ✅ FIXED: No ${} here
         
         const modalHtml = `
             <div class="modal" id="editProductModal">
@@ -903,7 +904,7 @@
                     </div>
                     <div class="alert-info" style="margin-bottom:15px; background:#dbeafe; color:#1e40af; border-left:4px solid #3b82f6;">
                         <i class="fas fa-info-circle"></i> 
-                        <strong>Current stock:</strong> ${roundToTwo(product.stockKg)} kg<br>
+                        <strong>Current stock:</strong> ${roundToTwo(currentStock)} kg<br>
                         Enter the amount of <strong>NEW stock</strong> to ADD to existing stock.
                     </div>
                     <div class="form-group" style="background:#f0fdf4; padding:12px; border-radius:10px; border:1px solid #d1fae5;">
@@ -911,8 +912,8 @@
                         <input type="number" id="editStock" step="0.1" placeholder="Enter kg to add" value="" style="border-color:#10b981;">
                         <div class="calc-note" style="color:#065f46;">
                             <i class="fas fa-calculator"></i> 
-                            This will be <strong>ADDED</strong> to current stock of ${roundToTwo(product.stockKg)} kg 
-                            → New total will be <strong id="newTotalPreview">${roundToTwo(product.stockKg)} kg</strong>
+                            This will be <strong>ADDED</strong> to current stock of ${roundToTwo(currentStock)} kg 
+                            → New total will be <strong id="newTotalPreview">${roundToTwo(currentStock)} kg</strong>
                         </div>
                     </div>
                     <div class="form-group">
@@ -957,13 +958,13 @@
         if (existing) existing.remove();
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         
-        // Add live preview for new total
+        // Add live preview for new total - ✅ FIXED
         const stockInput = document.getElementById('editStock');
         if (stockInput) {
+            const currentStockValue = currentStock;  // ✅ FIXED: Use the variable
             stockInput.addEventListener('input', function() {
-                const currentStock = ${product.stockKg};
                 const added = parseFloat(this.value) || 0;
-                const newTotal = currentStock + added;
+                const newTotal = currentStockValue + added;
                 const preview = document.getElementById('newTotalPreview');
                 if (preview) {
                     preview.textContent = roundToTwo(newTotal) + ' kg';
